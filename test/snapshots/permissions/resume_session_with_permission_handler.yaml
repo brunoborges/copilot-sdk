@@ -1,0 +1,36 @@
+models:
+  - claude-sonnet-4.5
+conversations:
+  - messages:
+      - role: system
+        content: ${system}
+      - role: user
+        content: What is 1+1?
+      - role: assistant
+        content: 1 + 1 = 2
+      - role: user
+        content: Run 'echo resumed' for me
+      - role: assistant
+        tool_calls:
+          - id: toolcall_0
+            type: function
+            function:
+              name: report_intent
+              arguments: '{"intent":"Running echo command"}'
+      - role: assistant
+        tool_calls:
+          - id: toolcall_1
+            type: function
+            function:
+              name: ${shell}
+              arguments: '{"command":"echo resumed","description":"Run echo resumed"}'
+      - role: tool
+        tool_call_id: toolcall_0
+        content: Intent logged
+      - role: tool
+        tool_call_id: toolcall_1
+        content: |-
+          resumed
+          <exited with exit code 0>
+      - role: assistant
+        content: "The command executed successfully and output: `resumed`"

@@ -1,0 +1,20 @@
+name: "Setup Copilot"
+description: "Setup Copilot based on the project's package.json file."
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/setup-node@v6
+      with:
+        cache: "npm"
+        cache-dependency-path: "./nodejs/package-lock.json"
+        node-version: 22
+    - name: Install dependencies
+      run: npm --prefix "$(pwd)/nodejs" ci --ignore-scripts
+      shell: bash
+    - name: Set CLI path
+      id: cli-path
+      run: echo "path=$(pwd)/nodejs/node_modules/@github/copilot/index.js" >> $GITHUB_OUTPUT
+      shell: bash
+    - name: Verify CLI works
+      run: node ${{ steps.cli-path.outputs.path }} --version
+      shell: bash

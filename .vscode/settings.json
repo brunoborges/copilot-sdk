@@ -1,0 +1,17 @@
+{
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "editor.formatOnSave": true,
+  "files.trimTrailingWhitespace": true,
+  "files.insertFinalNewline": true,
+  "editor.tabSize": 4,
+  "editor.insertSpaces": true,
+  "[typescript][javascript][typescriptreact]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "editor.codeActionsOnSave": {
+      "source.organizeImports": "explicit"
+    }
+  },
+  "python.testing.pytestEnabled": true,
+  "python.testing.unittestEnabled": false,
+  "python.testing.pytestArgs": ["python"]
+}

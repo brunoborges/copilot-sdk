@@ -1,0 +1,15 @@
+models:
+  - claude-sonnet-4.5
+conversations:
+  - messages:
+      - role: system
+        content: ${system}
+      - role: user
+        content: What is your full name?
+      - role: assistant
+        content: >-
+          My full name is **GitHub Copilot CLI**. I'm a terminal assistant built by GitHub to help you with software
+          engineering tasks directly from the command line.
+
+
+          Have a nice day!

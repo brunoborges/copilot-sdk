@@ -1,0 +1,89 @@
+[build-system]
+requires = ["setuptools>=45", "wheel", "setuptools_scm[toml]>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "github-copilot-sdk"
+version = "0.1.0"
+description = "Python SDK for GitHub Copilot CLI"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+    {name = "GitHub", email = "opensource@github.com"}
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "python-dateutil>=2.9.0.post0",
+    "pydantic>=2.0",
+    "typing-extensions>=4.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/github/copilot-sdk"
+Repository = "https://github.com/github/copilot-sdk"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["copilot*"]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.1.0",
+    "ty>=0.0.2",
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "typing-extensions>=4.0.0",
+    "httpx>=0.24.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py38"
+exclude = [
+    "generated",
+    "copilot/generated",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "UP", # pyupgrade
+]
+ignore = [
+    "UP006",
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.ty.rules]
+invalid-argument-type = "warn"
+
+[tool.ty.src]
+exclude = [
+    "generated",
+    "copilot/generated",
+    "copilot/test_*.py",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["."]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+asyncio_mode = "auto"

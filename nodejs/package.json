@@ -1,0 +1,71 @@
+{
+  "name": "@github/copilot-sdk",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/github/copilot-sdk.git"
+  },
+  "version": "0.1.8",
+  "description": "TypeScript SDK for programmatic control of GitHub Copilot CLI via JSON-RPC",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "type": "module",
+  "scripts": {
+    "clean": "rimraf --glob dist *.tgz",
+    "build": "tsx esbuild-copilotsdk-nodejs.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\" --ignore-path .prettierignore",
+    "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\" --ignore-path .prettierignore",
+    "lint": "eslint \"src/**/*.ts\" \"test/**/*.ts\"",
+    "lint:fix": "eslint --fix \"src/**/*.ts\" \"test/**/*.ts\"",
+    "typecheck": "tsc --noEmit",
+    "generate:session-types": "tsx scripts/generate-session-types.ts",
+    "update:protocol-version": "tsx scripts/generate-protocol-version.ts",
+    "prepublishOnly": "npm run build",
+    "package": "npm run clean && npm run build && node scripts/set-version.js && npm pack && npm version 0.1.0 --no-git-tag-version --allow-same-version"
+  },
+  "keywords": [
+    "github",
+    "copilot",
+    "sdk",
+    "jsonrpc",
+    "agent"
+  ],
+  "author": "GitHub",
+  "license": "MIT",
+  "dependencies": {
+    "@github/copilot": "^0.0.382-0",
+    "vscode-jsonrpc": "^8.2.1",
+    "zod": "^4.3.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.6",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "esbuild": "^0.27.0",
+    "eslint": "^9.0.0",
+    "glob": "^11.0.0",
+    "json-schema": "^0.4.0",
+    "json-schema-to-typescript": "^15.0.4",
+    "prettier": "^3.4.0",
+    "quicktype-core": "^23.2.6",
+    "rimraf": "^6.1.2",
+    "semver": "^7.7.3",
+    "tsx": "^4.20.6",
+    "typescript": "^5.0.0",
+    "vitest": "^4.0.16"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "dist/**/*",
+    "README.md"
+  ]
+}

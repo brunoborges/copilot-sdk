@@ -1,0 +1,315 @@
+"""
+Copilot Session - represents a single conversation session with the Copilot CLI.
+
+This module provides the CopilotSession class for managing individual
+conversation sessions with the Copilot CLI.
+"""
+
+import inspect
+import threading
+from typing import Any, Callable, Dict, List, Optional, Set
+
+from .generated.session_events import session_event_from_dict
+from .types import (
+    MessageOptions,
+    PermissionHandler,
+    SessionEvent,
+    Tool,
+    ToolHandler,
+)
+
+
+class CopilotSession:
+    """
+    Represents a single conversation session with the Copilot CLI.
+
+    A session maintains conversation state, handles events, and manages tool execution.
+    Sessions are created via :meth:`CopilotClient.create_session` or resumed via
+    :meth:`CopilotClient.resume_session`.
+
+    The session provides methods to send messages, subscribe to events, retrieve
+    conversation history, and manage the session lifecycle.
+
+    Attributes:
+        session_id: The unique identifier for this session.
+
+    Example:
+        >>> async with await client.create_session() as session:
+        ...     # Subscribe to events
+        ...     unsubscribe = session.on(lambda event: print(event.type))
+        ...
+        ...     # Send a message
+        ...     await session.send({"prompt": "Hello, world!"})
+        ...
+        ...     # Clean up
+        ...     unsubscribe()
+    """
+
+    def __init__(self, session_id: str, client: Any):
+        """
+        Initialize a new CopilotSession.
+
+        Note:
+            This constructor is internal. Use :meth:`CopilotClient.create_session`
+            to create sessions.
+
+        Args:
+            session_id: The unique identifier for this session.
+            client: The internal client connection to the Copilot CLI.
+        """
+        self.session_id = session_id
+        self._client = client
+        self._event_handlers: Set[Callable[[SessionEvent], None]] = set()
+        self._event_handlers_lock = threading.Lock()
+        self._tool_handlers: Dict[str, ToolHandler] = {}
+        self._tool_handlers_lock = threading.Lock()
+        self._permission_handler: Optional[PermissionHandler] = None
+        self._permission_handler_lock = threading.Lock()
+
+    async def send(self, options: MessageOptions) -> str:
+        """
+        Send a message to this session and wait for the response.
+
+        The message is processed asynchronously. Subscribe to events via :meth:`on`
+        to receive streaming responses and other session events.
+
+        Args:
+            options: Message options including the prompt and optional attachments.
+                Must contain a "prompt" key with the message text. Can optionally
+                include "attachments" and "mode" keys.
+
+        Returns:
+            The message ID of the response, which can be used to correlate events.
+
+        Raises:
+            Exception: If the session has been destroyed or the connection fails.
+
+        Example:
+            >>> message_id = await session.send({
+            ...     "prompt": "Explain this code",
+            ...     "attachments": [{"type": "file", "path": "./src/main.py"}]
+            ... })
+        """
+        response = await self._client.request(
+            "session.send",
+            {
+                "sessionId": self.session_id,
+                "prompt": options["prompt"],
+                "attachments": options.get("attachments"),
+                "mode": options.get("mode"),
+            },
+        )
+        return response["messageId"]
+
+    def on(self, handler: Callable[[SessionEvent], None]) -> Callable[[], None]:
+        """
+        Subscribe to events from this session.
+
+        Events include assistant messages, tool executions, errors, and session
+        state changes. Multiple handlers can be registered and will all receive
+        events.
+
+        Args:
+            handler: A callback function that receives session events. The function
+                takes a single :class:`SessionEvent` argument and returns None.
+
+        Returns:
+            A function that, when called, unsubscribes the handler.
+
+        Example:
+            >>> def handle_event(event):
+            ...     if event.type == "assistant.message":
+            ...         print(f"Assistant: {event.data.content}")
+            ...     elif event.type == "session.error":
+            ...         print(f"Error: {event.data.message}")
+            ...
+            >>> unsubscribe = session.on(handle_event)
+            ...
+            >>> # Later, to stop receiving events:
+            >>> unsubscribe()
+        """
+        with self._event_handlers_lock:
+            self._event_handlers.add(handler)
+
+        def unsubscribe():
+            with self._event_handlers_lock:
+                self._event_handlers.discard(handler)
+
+        return unsubscribe
+
+    def _dispatch_event(self, event: SessionEvent) -> None:
+        """
+        Dispatch an event to all registered handlers.
+
+        Note:
+            This method is internal and should not be called directly.
+
+        Args:
+            event: The session event to dispatch to all handlers.
+        """
+        with self._event_handlers_lock:
+            handlers = list(self._event_handlers)
+
+        for handler in handlers:
+            try:
+                handler(event)
+            except Exception as e:
+                print(f"Error in session event handler: {e}")
+
+    def _register_tools(self, tools: Optional[List[Tool]]) -> None:
+        """
+        Register custom tool handlers for this session.
+
+        Tools allow the assistant to execute custom functions. When the assistant
+        invokes a tool, the corresponding handler is called with the tool arguments.
+
+        Note:
+            This method is internal. Tools are typically registered when creating
+            a session via :meth:`CopilotClient.create_session`.
+
+        Args:
+            tools: A list of Tool objects with their handlers, or None to clear
+                all registered tools.
+        """
+        with self._tool_handlers_lock:
+            self._tool_handlers.clear()
+            if not tools:
+                return
+            for tool in tools:
+                if not tool.name or not tool.handler:
+                    continue
+                self._tool_handlers[tool.name] = tool.handler
+
+    def _get_tool_handler(self, name: str) -> Optional[ToolHandler]:
+        """
+        Retrieve a registered tool handler by name.
+
+        Note:
+            This method is internal and should not be called directly.
+
+        Args:
+            name: The name of the tool to retrieve.
+
+        Returns:
+            The tool handler if found, or None if no handler is registered
+            for the given name.
+        """
+        with self._tool_handlers_lock:
+            return self._tool_handlers.get(name)
+
+    def _register_permission_handler(self, handler: Optional[PermissionHandler]) -> None:
+        """
+        Register a handler for permission requests.
+
+        When the assistant needs permission to perform certain actions (e.g.,
+        file operations), this handler is called to approve or deny the request.
+
+        Note:
+            This method is internal. Permission handlers are typically registered
+            when creating a session via :meth:`CopilotClient.create_session`.
+
+        Args:
+            handler: The permission handler function, or None to remove the handler.
+        """
+        with self._permission_handler_lock:
+            self._permission_handler = handler
+
+    async def _handle_permission_request(self, request: dict) -> dict:
+        """
+        Handle a permission request from the Copilot CLI.
+
+        Note:
+            This method is internal and should not be called directly.
+
+        Args:
+            request: The permission request data from the CLI.
+
+        Returns:
+            A dictionary containing the permission decision with a "kind" key.
+        """
+        with self._permission_handler_lock:
+            handler = self._permission_handler
+
+        if not handler:
+            # No handler registered, deny permission
+            return {"kind": "denied-no-approval-rule-and-could-not-request-from-user"}
+
+        try:
+            result = handler(request, {"session_id": self.session_id})
+            if inspect.isawaitable(result):
+                result = await result
+            return result
+        except Exception:  # pylint: disable=broad-except
+            # Handler failed, deny permission
+            return {"kind": "denied-no-approval-rule-and-could-not-request-from-user"}
+
+    async def get_messages(self) -> List[SessionEvent]:
+        """
+        Retrieve all events and messages from this session's history.
+
+        This returns the complete conversation history including user messages,
+        assistant responses, tool executions, and other session events.
+
+        Returns:
+            A list of all session events in chronological order.
+
+        Raises:
+            Exception: If the session has been destroyed or the connection fails.
+
+        Example:
+            >>> events = await session.get_messages()
+            >>> for event in events:
+            ...     if event.type == "assistant.message":
+            ...         print(f"Assistant: {event.data.content}")
+        """
+        response = await self._client.request("session.getMessages", {"sessionId": self.session_id})
+        # Convert dict events to SessionEvent objects
+        events_dicts = response["events"]
+        return [session_event_from_dict(event_dict) for event_dict in events_dicts]
+
+    async def destroy(self) -> None:
+        """
+        Destroy this session and release all associated resources.
+
+        After calling this method, the session can no longer be used. All event
+        handlers and tool handlers are cleared. To continue the conversation,
+        use :meth:`CopilotClient.resume_session` with the session ID.
+
+        Raises:
+            Exception: If the connection fails.
+
+        Example:
+            >>> # Clean up when done
+            >>> await session.destroy()
+        """
+        await self._client.request("session.destroy", {"sessionId": self.session_id})
+        with self._event_handlers_lock:
+            self._event_handlers.clear()
+        with self._tool_handlers_lock:
+            self._tool_handlers.clear()
+        with self._permission_handler_lock:
+            self._permission_handler = None
+
+    async def abort(self) -> None:
+        """
+        Abort the currently processing message in this session.
+
+        Use this to cancel a long-running request. The session remains valid
+        and can continue to be used for new messages.
+
+        Raises:
+            Exception: If the session has been destroyed or the connection fails.
+
+        Example:
+            >>> import asyncio
+            >>>
+            >>> # Start a long-running request
+            >>> task = asyncio.create_task(
+            ...     session.send({"prompt": "Write a very long story..."})
+            ... )
+            >>>
+            >>> # Abort after 5 seconds
+            >>> await asyncio.sleep(5)
+            >>> await session.abort()
+        """
+        await self._client.request("session.abort", {"sessionId": self.session_id})

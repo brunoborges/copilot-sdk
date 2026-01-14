@@ -1,0 +1,372 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *--------------------------------------------------------------------------------------------*/
+
+using Microsoft.Extensions.AI;
+using StreamJsonRpc;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+
+namespace GitHub.Copilot.SDK;
+
+/// <summary>
+/// Represents a single conversation session with the Copilot CLI.
+/// </summary>
+/// <remarks>
+/// <para>
+/// A session maintains conversation state, handles events, and manages tool execution.
+/// Sessions are created via <see cref="CopilotClient.CreateSessionAsync"/> or resumed via
+/// <see cref="CopilotClient.ResumeSessionAsync"/>.
+/// </para>
+/// <para>
+/// The session provides methods to send messages, subscribe to events, retrieve
+/// conversation history, and manage the session lifecycle.
+/// </para>
+/// </remarks>
+/// <example>
+/// <code>
+/// await using var session = await client.CreateSessionAsync(new SessionConfig { Model = "gpt-4" });
+///
+/// // Subscribe to events
+/// using var subscription = session.On(evt =>
+/// {
+///     if (evt.Type == "assistant.message")
+///     {
+///         Console.WriteLine($"Assistant: {evt.Data?.Content}");
+///     }
+/// });
+///
+/// // Send a message
+/// await session.SendAsync(new MessageOptions { Prompt = "Hello, world!" });
+/// </code>
+/// </example>
+public class CopilotSession : IAsyncDisposable
+{
+    private readonly HashSet<SessionEventHandler> _eventHandlers = new();
+    private readonly Dictionary<string, AIFunction> _toolHandlers = new();
+    private readonly JsonRpc _rpc;
+    private PermissionHandler? _permissionHandler;
+    private readonly SemaphoreSlim _permissionHandlerLock = new(1, 1);
+
+    /// <summary>
+    /// Gets the unique identifier for this session.
+    /// </summary>
+    /// <value>A string that uniquely identifies this session.</value>
+    public string SessionId { get; }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="CopilotSession"/> class.
+    /// </summary>
+    /// <param name="sessionId">The unique identifier for this session.</param>
+    /// <param name="rpc">The JSON-RPC connection to the Copilot CLI.</param>
+    /// <remarks>
+    /// This constructor is internal. Use <see cref="CopilotClient.CreateSessionAsync"/> to create sessions.
+    /// </remarks>
+    internal CopilotSession(string sessionId, JsonRpc rpc)
+    {
+        SessionId = sessionId;
+        _rpc = rpc;
+    }
+
+    /// <summary>
+    /// Sends a message to the Copilot session and waits for the response.
+    /// </summary>
+    /// <param name="options">Options for the message to be sent, including the prompt and optional attachments.</param>
+    /// <param name="cancellationToken">A <see cref="CancellationToken"/> that can be used to cancel the operation.</param>
+    /// <returns>A task that resolves with the ID of the response message, which can be used to correlate events.</returns>
+    /// <exception cref="InvalidOperationException">Thrown if the session has been disposed.</exception>
+    /// <remarks>
+    /// The message is processed asynchronously. Subscribe to events via <see cref="On"/> to receive
+    /// streaming responses and other session events.
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// var messageId = await session.SendAsync(new MessageOptions
+    /// {
+    ///     Prompt = "Explain this code",
+    ///     Attachments = new List&lt;Attachment&gt;
+    ///     {
+    ///         new() { Type = "file", Path = "./Program.cs" }
+    ///     }
+    /// });
+    /// </code>
+    /// </example>
+    public async Task<string> SendAsync(MessageOptions options, CancellationToken cancellationToken = default)
+    {
+        var request = new SendMessageRequest
+        {
+            SessionId = SessionId,
+            Prompt = options.Prompt,
+            Attachments = options.Attachments,
+            Mode = options.Mode
+        };
+
+        var response = await _rpc.InvokeWithCancellationAsync<SendMessageResponse>(
+            "session.send", [request], cancellationToken);
+
+        return response.MessageId;
+    }
+
+    /// <summary>
+    /// Registers a callback for session events.
+    /// </summary>
+    /// <param name="handler">A callback to be invoked when a session event occurs.</param>
+    /// <returns>An <see cref="IDisposable"/> that, when disposed, unsubscribes the handler.</returns>
+    /// <remarks>
+    /// <para>
+    /// Events include assistant messages, tool executions, errors, and session state changes.
+    /// Multiple handlers can be registered and will all receive events.
+    /// </para>
+    /// <para>
+    /// Handler exceptions are allowed to propagate so they are not lost.
+    /// </para>
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// using var subscription = session.On(evt =>
+    /// {
+    ///     switch (evt.Type)
+    ///     {
+    ///         case "assistant.message":
+    ///             Console.WriteLine($"Assistant: {evt.Data?.Content}");
+    ///             break;
+    ///         case "session.error":
+    ///             Console.WriteLine($"Error: {evt.Data?.Message}");
+    ///             break;
+    ///     }
+    /// });
+    ///
+    /// // The handler is automatically unsubscribed when the subscription is disposed.
+    /// </code>
+    /// </example>
+    public IDisposable On(SessionEventHandler handler)
+    {
+        _eventHandlers.Add(handler);
+        return new OnDisposeCall(() => _eventHandlers.Remove(handler));
+    }
+
+    /// <summary>
+    /// Dispatches an event to all registered handlers.
+    /// </summary>
+    /// <param name="sessionEvent">The session event to dispatch.</param>
+    /// <remarks>
+    /// This method is internal. Handler exceptions are allowed to propagate so they are not lost.
+    /// </remarks>
+    internal void DispatchEvent(SessionEvent sessionEvent)
+    {
+        foreach (var handler in _eventHandlers.ToArray())
+        {
+            // We allow handler exceptions to propagate so they are not lost
+            handler(sessionEvent);
+        }
+    }
+
+    /// <summary>
+    /// Registers custom tool handlers for this session.
+    /// </summary>
+    /// <param name="tools">A collection of AI functions that can be invoked by the assistant.</param>
+    /// <remarks>
+    /// Tools allow the assistant to execute custom functions. When the assistant invokes a tool,
+    /// the corresponding handler is called with the tool arguments.
+    /// </remarks>
+    internal void RegisterTools(ICollection<AIFunction> tools)
+    {
+        _toolHandlers.Clear();
+        foreach (var tool in tools)
+        {
+            _toolHandlers.Add(tool.Name, tool);
+        }
+    }
+
+    /// <summary>
+    /// Retrieves a registered tool by name.
+    /// </summary>
+    /// <param name="name">The name of the tool to retrieve.</param>
+    /// <returns>The tool if found; otherwise, <c>null</c>.</returns>
+    internal AIFunction? GetTool(string name) =>
+        _toolHandlers.TryGetValue(name, out var tool) ? tool : null;
+
+    /// <summary>
+    /// Registers a handler for permission requests.
+    /// </summary>
+    /// <param name="handler">The permission handler function.</param>
+    /// <remarks>
+    /// When the assistant needs permission to perform certain actions (e.g., file operations),
+    /// this handler is called to approve or deny the request.
+    /// </remarks>
+    internal void RegisterPermissionHandler(PermissionHandler handler)
+    {
+        _permissionHandlerLock.Wait();
+        try
+        {
+            _permissionHandler = handler;
+        }
+        finally
+        {
+            _permissionHandlerLock.Release();
+        }
+    }
+
+    /// <summary>
+    /// Handles a permission request from the Copilot CLI.
+    /// </summary>
+    /// <param name="permissionRequestData">The permission request data from the CLI.</param>
+    /// <returns>A task that resolves with the permission decision.</returns>
+    internal async Task<PermissionRequestResult> HandlePermissionRequestAsync(JsonElement permissionRequestData)
+    {
+        await _permissionHandlerLock.WaitAsync();
+        PermissionHandler? handler;
+        try
+        {
+            handler = _permissionHandler;
+        }
+        finally
+        {
+            _permissionHandlerLock.Release();
+        }
+
+        if (handler == null)
+        {
+            return new PermissionRequestResult
+            {
+                Kind = "denied-no-approval-rule-and-could-not-request-from-user"
+            };
+        }
+
+        var request = JsonSerializer.Deserialize<PermissionRequest>(permissionRequestData.GetRawText())
+            ?? throw new InvalidOperationException("Failed to deserialize permission request");
+
+        var invocation = new PermissionInvocation
+        {
+            SessionId = SessionId
+        };
+
+        return await handler(request, invocation);
+    }
+
+    /// <summary>
+    /// Gets the complete list of messages and events in the session.
+    /// </summary>
+    /// <param name="cancellationToken">A <see cref="CancellationToken"/> that can be used to cancel the operation.</param>
+    /// <returns>A task that, when resolved, gives the list of all session events in chronological order.</returns>
+    /// <exception cref="InvalidOperationException">Thrown if the session has been disposed.</exception>
+    /// <remarks>
+    /// This returns the complete conversation history including user messages, assistant responses,
+    /// tool executions, and other session events.
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// var events = await session.GetMessagesAsync();
+    /// foreach (var evt in events)
+    /// {
+    ///     if (evt.Type == "assistant.message")
+    ///     {
+    ///         Console.WriteLine($"Assistant: {evt.Data?.Content}");
+    ///     }
+    /// }
+    /// </code>
+    /// </example>
+    public async Task<IReadOnlyList<SessionEvent>> GetMessagesAsync(CancellationToken cancellationToken = default)
+    {
+        var response = await _rpc.InvokeWithCancellationAsync<GetMessagesResponse>(
+            "session.getMessages", [new { sessionId = SessionId }], cancellationToken);
+
+        return response.Events.Select(e => SessionEvent.FromJson(e.ToJsonString())).ToList();
+    }
+
+    /// <summary>
+    /// Aborts the currently processing message in this session.
+    /// </summary>
+    /// <param name="cancellationToken">A <see cref="CancellationToken"/> that can be used to cancel the operation.</param>
+    /// <returns>A task representing the abort operation.</returns>
+    /// <exception cref="InvalidOperationException">Thrown if the session has been disposed.</exception>
+    /// <remarks>
+    /// Use this to cancel a long-running request. The session remains valid and can continue
+    /// to be used for new messages.
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// // Start a long-running request
+    /// var messageTask = session.SendAsync(new MessageOptions
+    /// {
+    ///     Prompt = "Write a very long story..."
+    /// });
+    ///
+    /// // Abort after 5 seconds
+    /// await Task.Delay(TimeSpan.FromSeconds(5));
+    /// await session.AbortAsync();
+    /// </code>
+    /// </example>
+    public async Task AbortAsync(CancellationToken cancellationToken = default)
+    {
+        await _rpc.InvokeWithCancellationAsync<object>(
+            "session.abort", [new { sessionId = SessionId }], cancellationToken);
+    }
+
+    /// <summary>
+    /// Disposes the <see cref="CopilotSession"/> and releases all associated resources.
+    /// </summary>
+    /// <returns>A task representing the dispose operation.</returns>
+    /// <remarks>
+    /// <para>
+    /// After calling this method, the session can no longer be used. All event handlers
+    /// and tool handlers are cleared.
+    /// </para>
+    /// <para>
+    /// To continue the conversation, use <see cref="CopilotClient.ResumeSessionAsync"/>
+    /// with the session ID.
+    /// </para>
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// // Using 'await using' for automatic disposal
+    /// await using var session = await client.CreateSessionAsync();
+    ///
+    /// // Or manually dispose
+    /// var session2 = await client.CreateSessionAsync();
+    /// // ... use the session ...
+    /// await session2.DisposeAsync();
+    /// </code>
+    /// </example>
+    public async ValueTask DisposeAsync()
+    {
+        await _rpc.InvokeWithCancellationAsync<object>(
+            "session.destroy", [new { sessionId = SessionId }]);
+
+        _eventHandlers.Clear();
+        _toolHandlers.Clear();
+
+        await _permissionHandlerLock.WaitAsync();
+        try
+        {
+            _permissionHandler = null;
+        }
+        finally
+        {
+            _permissionHandlerLock.Release();
+        }
+    }
+
+    private class OnDisposeCall(Action callback) : IDisposable
+    {
+        public void Dispose() => callback();
+    }
+
+    private record SendMessageRequest
+    {
+        public string SessionId { get; init; } = string.Empty;
+        public string Prompt { get; init; } = string.Empty;
+        public List<UserMessageDataAttachmentsItem>? Attachments { get; init; }
+        public string? Mode { get; init; }
+    }
+
+    private record SendMessageResponse
+    {
+        public string MessageId { get; init; } = string.Empty;
+    }
+
+    private record GetMessagesResponse
+    {
+        public List<JsonObject> Events { get; init; } = new();
+    }
+}

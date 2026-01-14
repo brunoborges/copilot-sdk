@@ -1,0 +1,25 @@
+# Build results
+bin/
+obj/
+
+# NuGet packages
+*.nupkg
+*.snupkg
+
+# User-specific files
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# IDE
+.vs/
+.vscode/
+*.swp
+*~
+
+# Rider
+.idea/
+
+# Test results
+TestResults/

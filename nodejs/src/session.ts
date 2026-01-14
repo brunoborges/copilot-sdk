@@ -1,0 +1,288 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *--------------------------------------------------------------------------------------------*/
+
+/**
+ * Copilot Session - represents a single conversation session with the Copilot CLI.
+ * @module session
+ */
+
+import type { MessageConnection } from "vscode-jsonrpc/node";
+import type {
+    MessageOptions,
+    PermissionHandler,
+    PermissionRequest,
+    PermissionRequestResult,
+    SessionEvent,
+    SessionEventHandler,
+    Tool,
+    ToolHandler,
+} from "./types.js";
+
+/**
+ * Represents a single conversation session with the Copilot CLI.
+ *
+ * A session maintains conversation state, handles events, and manages tool execution.
+ * Sessions are created via {@link CopilotClient.createSession} or resumed via
+ * {@link CopilotClient.resumeSession}.
+ *
+ * @example
+ * ```typescript
+ * const session = await client.createSession({ model: "gpt-4" });
+ *
+ * // Subscribe to events
+ * const unsubscribe = session.on((event) => {
+ *   if (event.type === "assistant.message") {
+ *     console.log(event.data.content);
+ *   }
+ * });
+ *
+ * // Send a message
+ * await session.send({ prompt: "Hello, world!" });
+ *
+ * // Clean up
+ * unsubscribe();
+ * await session.destroy();
+ * ```
+ */
+export class CopilotSession {
+    private eventHandlers: Set<SessionEventHandler> = new Set();
+    private toolHandlers: Map<string, ToolHandler> = new Map();
+    private permissionHandler?: PermissionHandler;
+
+    /**
+     * Creates a new CopilotSession instance.
+     *
+     * @param sessionId - The unique identifier for this session
+     * @param connection - The JSON-RPC message connection to the Copilot CLI
+     * @internal This constructor is internal. Use {@link CopilotClient.createSession} to create sessions.
+     */
+    constructor(
+        public readonly sessionId: string,
+        private connection: MessageConnection
+    ) {}
+
+    /**
+     * Sends a message to this session and waits for the response.
+     *
+     * The message is processed asynchronously. Subscribe to events via {@link on}
+     * to receive streaming responses and other session events.
+     *
+     * @param options - The message options including the prompt and optional attachments
+     * @returns A promise that resolves with the message ID of the response
+     * @throws Error if the session has been destroyed or the connection fails
+     *
+     * @example
+     * ```typescript
+     * const messageId = await session.send({
+     *   prompt: "Explain this code",
+     *   attachments: [{ type: "file", path: "./src/index.ts" }]
+     * });
+     * ```
+     */
+    async send(options: MessageOptions): Promise<string> {
+        const response = await this.connection.sendRequest("session.send", {
+            sessionId: this.sessionId,
+            prompt: options.prompt,
+            attachments: options.attachments,
+            mode: options.mode,
+        });
+
+        return (response as { messageId: string }).messageId;
+    }
+
+    /**
+     * Subscribes to events from this session.
+     *
+     * Events include assistant messages, tool executions, errors, and session state changes.
+     * Multiple handlers can be registered and will all receive events.
+     *
+     * @param handler - A callback function that receives session events
+     * @returns A function that, when called, unsubscribes the handler
+     *
+     * @example
+     * ```typescript
+     * const unsubscribe = session.on((event) => {
+     *   switch (event.type) {
+     *     case "assistant.message":
+     *       console.log("Assistant:", event.data.content);
+     *       break;
+     *     case "session.error":
+     *       console.error("Error:", event.data.message);
+     *       break;
+     *   }
+     * });
+     *
+     * // Later, to stop receiving events:
+     * unsubscribe();
+     * ```
+     */
+    on(handler: SessionEventHandler): () => void {
+        this.eventHandlers.add(handler);
+        return () => {
+            this.eventHandlers.delete(handler);
+        };
+    }
+
+    /**
+     * Dispatches an event to all registered handlers.
+     *
+     * @param event - The session event to dispatch
+     * @internal This method is for internal use by the SDK.
+     */
+    _dispatchEvent(event: SessionEvent): void {
+        for (const handler of this.eventHandlers) {
+            try {
+                handler(event);
+            } catch (_error) {
+                // Handler error
+            }
+        }
+    }
+
+    /**
+     * Registers custom tool handlers for this session.
+     *
+     * Tools allow the assistant to execute custom functions. When the assistant
+     * invokes a tool, the corresponding handler is called with the tool arguments.
+     *
+     * @param tools - An array of tool definitions with their handlers, or undefined to clear all tools
+     * @internal This method is typically called internally when creating a session with tools.
+     */
+    registerTools(tools?: Tool[]): void {
+        this.toolHandlers.clear();
+        if (!tools) {
+            return;
+        }
+
+        for (const tool of tools) {
+            this.toolHandlers.set(tool.name, tool.handler);
+        }
+    }
+
+    /**
+     * Retrieves a registered tool handler by name.
+     *
+     * @param name - The name of the tool to retrieve
+     * @returns The tool handler if found, or undefined
+     * @internal This method is for internal use by the SDK.
+     */
+    getToolHandler(name: string): ToolHandler | undefined {
+        return this.toolHandlers.get(name);
+    }
+
+    /**
+     * Registers a handler for permission requests.
+     *
+     * When the assistant needs permission to perform certain actions (e.g., file operations),
+     * this handler is called to approve or deny the request.
+     *
+     * @param handler - The permission handler function, or undefined to remove the handler
+     * @internal This method is typically called internally when creating a session.
+     */
+    registerPermissionHandler(handler?: PermissionHandler): void {
+        this.permissionHandler = handler;
+    }
+
+    /**
+     * Handles a permission request from the Copilot CLI.
+     *
+     * @param request - The permission request data from the CLI
+     * @returns A promise that resolves with the permission decision
+     * @internal This method is for internal use by the SDK.
+     */
+    async _handlePermissionRequest(request: unknown): Promise<PermissionRequestResult> {
+        if (!this.permissionHandler) {
+            // No handler registered, deny permission
+            return { kind: "denied-no-approval-rule-and-could-not-request-from-user" };
+        }
+
+        try {
+            const result = await this.permissionHandler(request as PermissionRequest, {
+                sessionId: this.sessionId,
+            });
+            return result;
+        } catch (_error) {
+            // Handler failed, deny permission
+            return { kind: "denied-no-approval-rule-and-could-not-request-from-user" };
+        }
+    }
+
+    /**
+     * Retrieves all events and messages from this session's history.
+     *
+     * This returns the complete conversation history including user messages,
+     * assistant responses, tool executions, and other session events.
+     *
+     * @returns A promise that resolves with an array of all session events
+     * @throws Error if the session has been destroyed or the connection fails
+     *
+     * @example
+     * ```typescript
+     * const events = await session.getMessages();
+     * for (const event of events) {
+     *   if (event.type === "assistant.message") {
+     *     console.log("Assistant:", event.data.content);
+     *   }
+     * }
+     * ```
+     */
+    async getMessages(): Promise<SessionEvent[]> {
+        const response = await this.connection.sendRequest("session.getMessages", {
+            sessionId: this.sessionId,
+        });
+
+        return (response as { events: SessionEvent[] }).events;
+    }
+
+    /**
+     * Destroys this session and releases all associated resources.
+     *
+     * After calling this method, the session can no longer be used. All event
+     * handlers and tool handlers are cleared. To continue the conversation,
+     * use {@link CopilotClient.resumeSession} with the session ID.
+     *
+     * @returns A promise that resolves when the session is destroyed
+     * @throws Error if the connection fails
+     *
+     * @example
+     * ```typescript
+     * // Clean up when done
+     * await session.destroy();
+     * ```
+     */
+    async destroy(): Promise<void> {
+        await this.connection.sendRequest("session.destroy", {
+            sessionId: this.sessionId,
+        });
+        this.eventHandlers.clear();
+        this.toolHandlers.clear();
+        this.permissionHandler = undefined;
+    }
+
+    /**
+     * Aborts the currently processing message in this session.
+     *
+     * Use this to cancel a long-running request. The session remains valid
+     * and can continue to be used for new messages.
+     *
+     * @returns A promise that resolves when the abort request is acknowledged
+     * @throws Error if the session has been destroyed or the connection fails
+     *
+     * @example
+     * ```typescript
+     * // Start a long-running request
+     * const messagePromise = session.send({ prompt: "Write a very long story..." });
+     *
+     * // Abort after 5 seconds
+     * setTimeout(async () => {
+     *   await session.abort();
+     * }, 5000);
+     * ```
+     */
+    async abort(): Promise<void> {
+        await this.connection.sendRequest("session.abort", {
+            sessionId: this.sessionId,
+        });
+    }
+}

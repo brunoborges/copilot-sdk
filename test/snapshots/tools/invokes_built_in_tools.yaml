@@ -1,0 +1,30 @@
+models:
+  - claude-sonnet-4.5
+conversations:
+  - messages:
+      - role: system
+        content: ${system}
+      - role: user
+        content: What's the first line of README.md in this directory?
+      - role: assistant
+        tool_calls:
+          - id: toolcall_0
+            type: function
+            function:
+              name: report_intent
+              arguments: '{"intent":"Reading README file"}'
+      - role: assistant
+        tool_calls:
+          - id: toolcall_1
+            type: function
+            function:
+              name: view
+              arguments: '{"path":"${workdir}/README.md","view_range":[1,1]}'
+      - role: tool
+        tool_call_id: toolcall_0
+        content: Intent logged
+      - role: tool
+        tool_call_id: toolcall_1
+        content: "1. # ELIZA, the only chatbot you'll ever need"
+      - role: assistant
+        content: "The first line of README.md is: `# ELIZA, the only chatbot you'll ever need`"

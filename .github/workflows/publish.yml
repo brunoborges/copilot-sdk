@@ -1,0 +1,208 @@
+name: Publish SDK packages
+
+env:
+  HUSKY: 0
+
+on:
+  workflow_dispatch:
+    inputs:
+      dist-tag:
+        description: "Tag to publish under"
+        type: choice
+        required: true
+        default: "latest"
+        options:
+          - latest
+          - prerelease
+      version:
+        description: "Version override (optional, e.g., 1.0.0). If empty, auto-increments."
+        type: string
+        required: false
+
+permissions:
+  contents: write
+  id-token: write # Required for OIDC
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  # Shared job to calculate version once for all publish jobs
+  version:
+    name: Calculate Version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.VERSION }}
+      current: ${{ steps.version.outputs.CURRENT }}
+      current-prerelease: ${{ steps.version.outputs.CURRENT_PRERELEASE }}
+    defaults:
+      run:
+        working-directory: ./nodejs
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22.x"
+      - run: npm ci --ignore-scripts
+      - name: Get version
+        id: version
+        run: |
+          CURRENT="$(node scripts/get-version.js current)"
+          echo "CURRENT=$CURRENT" >> $GITHUB_OUTPUT
+          echo "Current latest version: $CURRENT" >> $GITHUB_STEP_SUMMARY
+          CURRENT_PRERELEASE="$(node scripts/get-version.js current-prerelease)"
+          echo "CURRENT_PRERELEASE=$CURRENT_PRERELEASE" >> $GITHUB_OUTPUT
+          echo "Current prerelease version: $CURRENT_PRERELEASE" >> $GITHUB_STEP_SUMMARY
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+            # Validate version format matches dist-tag
+            if [ "${{ github.event.inputs.dist-tag }}" = "latest" ]; then
+              if [[ "$VERSION" == *-* ]]; then
+                echo "❌ Error: Version '$VERSION' has a prerelease suffix but dist-tag is 'latest'" >> $GITHUB_STEP_SUMMARY
+                echo "Use a version without suffix (e.g., '1.0.0') for latest releases"
+                exit 1
+              fi
+            else
+              if [[ "$VERSION" != *-* ]]; then
+                echo "❌ Error: Version '$VERSION' has no prerelease suffix but dist-tag is 'prerelease'" >> $GITHUB_STEP_SUMMARY
+                echo "Use a version with suffix (e.g., '1.0.0-preview.0') for prerelease"
+                exit 1
+              fi
+            fi
+            echo "Using manual version override: $VERSION" >> $GITHUB_STEP_SUMMARY
+          else
+            VERSION="$(node scripts/get-version.js ${{ github.event.inputs.dist-tag }})"
+            echo "Auto-incremented version: $VERSION" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+
+  publish-nodejs:
+    name: Publish Node.js SDK
+    needs: version
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./nodejs
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22.x"
+      - name: Update npm for OIDC support
+        run: npm i -g "npm@11.6.3"
+      - run: npm ci --ignore-scripts
+      - name: Set version
+        run: node scripts/set-version.js
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+      - name: Temporarily replace README.md
+        run: echo "Coming soon" > README.md
+      - name: Build
+        run: npm run build
+      - name: Pack
+        run: npm pack
+      - name: Upload artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: nodejs-package
+          path: nodejs/*.tgz
+      # TODO: Re-enable npm publish once ready
+      # - name: Publish to npm
+      #   run: npm publish --tag ${{ github.event.inputs.dist-tag }} --access public --registry https://registry.npmjs.org
+
+  publish-dotnet:
+    name: Publish .NET SDK
+    needs: version
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./dotnet
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "8.0.x"
+      - name: Restore dependencies
+        run: dotnet restore
+      - name: Build and pack
+        run: dotnet pack src/GitHub.Copilot.SDK.csproj -c Release -p:Version=${{ needs.version.outputs.version }} -o ./artifacts
+      - name: Upload artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: dotnet-package
+          path: dotnet/artifacts/*.nupkg
+      - name: NuGet login (OIDC)
+        uses: NuGet/login@v1
+        id: nuget-login
+        with:
+          # The following must be a username, not an organization name, and that user must have configured Trusted Publishing
+          # for this owner/repo/workflow combination in their NuGet.org account settings. We could set up a dedicated user for
+          # this purpose if needed, but then we'd have to manage that account separately. Other GitHub-owned packages on NuGet
+          # are associated with individual maintainers' accounts too.
+          user: stevesanderson
+      - name: Publish to NuGet
+        run: dotnet nuget push ./artifacts/*.nupkg --api-key ${{ steps.nuget-login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+
+  publish-python:
+    name: Publish Python SDK
+    needs: version
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./python
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+      - name: Set version
+        run: sed -i "s/^version = .*/version = \"${{ needs.version.outputs.version }}\"/" pyproject.toml
+      - name: Build package
+        run: uv build
+      - name: Upload artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: python-package
+          path: python/dist/*
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: python/dist/
+
+  github-release:
+    name: Create GitHub Release
+    needs: [version, publish-nodejs, publish-dotnet, publish-python]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Create GitHub Release
+        if: github.event.inputs.dist-tag == 'latest'
+        run: |
+          NOTES_FLAG=""
+          if git rev-parse "v${{ needs.version.outputs.current }}" >/dev/null 2>&1; then
+            NOTES_FLAG="--notes-start-tag v${{ needs.version.outputs.current }}"
+          fi
+          gh release create "v${{ needs.version.outputs.version }}" \
+            --title "v${{ needs.version.outputs.version }}" \
+            --generate-notes $NOTES_FLAG \
+            --target ${{ github.sha }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create GitHub Pre-Release
+        if: github.event.inputs.dist-tag == 'prerelease'
+        run: |
+          NOTES_FLAG=""
+          if git rev-parse "v${{ needs.version.outputs.current-prerelease }}" >/dev/null 2>&1; then
+            NOTES_FLAG="--notes-start-tag v${{ needs.version.outputs.current-prerelease }}"
+          fi
+          gh release create "v${{ needs.version.outputs.version }}" \
+            --prerelease \
+            --title "v${{ needs.version.outputs.version }}" \
+            --generate-notes $NOTES_FLAG \
+            --target ${{ github.sha }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
