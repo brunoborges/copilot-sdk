@@ -4,6 +4,8 @@ Java SDK for programmatic control of GitHub Copilot CLI.
 
 > **Note:** This SDK is in technical preview and may change in breaking ways.
 
+> **⚠️ This branch is outdated.** The Java SDK has been merged to the `main` branch. Please use the [main branch](https://github.com/brunoborges/copilot-sdk/tree/main/java) for the latest version.
+
 ## Requirements
 
 - Java 21 or later
