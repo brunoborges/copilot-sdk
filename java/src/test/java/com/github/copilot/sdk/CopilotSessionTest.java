@@ -21,10 +21,12 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import com.github.copilot.sdk.events.AbstractSessionEvent;
+import com.github.copilot.sdk.events.AbortEvent;
 import com.github.copilot.sdk.events.AssistantMessageDeltaEvent;
 import com.github.copilot.sdk.events.AssistantMessageEvent;
 import com.github.copilot.sdk.events.SessionIdleEvent;
 import com.github.copilot.sdk.events.SessionStartEvent;
+import com.github.copilot.sdk.events.ToolExecutionStartEvent;
 import com.github.copilot.sdk.events.UserMessageEvent;
 import com.github.copilot.sdk.json.MessageOptions;
 import com.github.copilot.sdk.json.SessionConfig;
@@ -360,15 +362,38 @@ public class CopilotSessionTest {
             CopilotSession session = client.createSession().get();
             assertNotNull(session.getSessionId());
 
-            // Send a message (non-blocking)
-            session.send(new MessageOptions().setPrompt("What is 1+1?")).get();
+            // Set up wait for tool execution to start BEFORE sending
+            CompletableFuture<ToolExecutionStartEvent> toolStartFuture = new CompletableFuture<>();
+            CompletableFuture<SessionIdleEvent> sessionIdleFuture = new CompletableFuture<>();
 
-            // Abort the session immediately
+            session.on(evt -> {
+                if (evt instanceof ToolExecutionStartEvent toolStart && !toolStartFuture.isDone()) {
+                    toolStartFuture.complete(toolStart);
+                } else if (evt instanceof SessionIdleEvent idle && !sessionIdleFuture.isDone()) {
+                    sessionIdleFuture.complete(idle);
+                }
+            });
+
+            // Send a message that will trigger a long-running shell command
+            session.send(new MessageOptions()
+                    .setPrompt("run the shell command 'sleep 100' (note this works on both bash and PowerShell)")).get();
+
+            // Wait for the tool to start executing
+            toolStartFuture.get(60, TimeUnit.SECONDS);
+
+            // Abort the session while the tool is running
             session.abort();
+
+            // Wait for session to become idle after abort
+            sessionIdleFuture.get(30, TimeUnit.SECONDS);
 
             // The session should still be alive and usable after abort
             List<AbstractSessionEvent> messages = session.getMessages().get(60, TimeUnit.SECONDS);
             assertFalse(messages.isEmpty());
+
+            // Verify an abort event exists in messages
+            assertTrue(messages.stream().anyMatch(m -> m instanceof AbortEvent),
+                    "Expected an abort event in messages");
 
             // We should be able to send another message
             AssistantMessageEvent answer = session.sendAndWait(new MessageOptions().setPrompt("What is 2+2?")).get(60,
