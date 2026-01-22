@@ -6,6 +6,7 @@ using Microsoft.Extensions.AI;
 using StreamJsonRpc;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 
 namespace GitHub.Copilot.SDK;
 
@@ -30,9 +31,9 @@ namespace GitHub.Copilot.SDK;
 /// // Subscribe to events
 /// using var subscription = session.On(evt =>
 /// {
-///     if (evt.Type == "assistant.message")
+///     if (evt is AssistantMessageEvent assistantMessage)
 ///     {
-///         Console.WriteLine($"Assistant: {evt.Data?.Content}");
+///         Console.WriteLine($"Assistant: {assistantMessage.Data?.Content}");
 ///     }
 /// });
 ///
@@ -40,7 +41,7 @@ namespace GitHub.Copilot.SDK;
 /// await session.SendAndWaitAsync(new MessageOptions { Prompt = "Hello, world!" });
 /// </code>
 /// </example>
-public class CopilotSession : IAsyncDisposable
+public partial class CopilotSession : IAsyncDisposable
 {
     private readonly HashSet<SessionEventHandler> _eventHandlers = new();
     private readonly Dictionary<string, AIFunction> _toolHandlers = new();
@@ -149,18 +150,20 @@ public class CopilotSession : IAsyncDisposable
 
         void Handler(SessionEvent evt)
         {
-            if (evt is AssistantMessageEvent assistantMessage)
+            switch (evt)
             {
-                lastAssistantMessage = assistantMessage;
-            }
-            else if (evt.Type == "session.idle")
-            {
-                tcs.TrySetResult(lastAssistantMessage);
-            }
-            else if (evt is SessionErrorEvent errorEvent)
-            {
-                var message = errorEvent.Data?.Message ?? "session error";
-                tcs.TrySetException(new InvalidOperationException($"Session error: {message}"));
+                case AssistantMessageEvent assistantMessage:
+                    lastAssistantMessage = assistantMessage;
+                    break;
+
+                case SessionIdleEvent:
+                    tcs.TrySetResult(lastAssistantMessage);
+                    break;
+
+                case SessionErrorEvent errorEvent:
+                    var message = errorEvent.Data?.Message ?? "session error";
+                    tcs.TrySetException(new InvalidOperationException($"Session error: {message}"));
+                    break;
             }
         }
 
@@ -194,12 +197,12 @@ public class CopilotSession : IAsyncDisposable
     /// <code>
     /// using var subscription = session.On(evt =>
     /// {
-    ///     switch (evt.Type)
+    ///     switch (evt)
     ///     {
-    ///         case "assistant.message":
+    ///         case AssistantMessageEvent:
     ///             Console.WriteLine($"Assistant: {evt.Data?.Content}");
     ///             break;
-    ///         case "session.error":
+    ///         case SessionErrorEvent:
     ///             Console.WriteLine($"Error: {evt.Data?.Message}");
     ///             break;
     ///     }
@@ -302,7 +305,7 @@ public class CopilotSession : IAsyncDisposable
             };
         }
 
-        var request = JsonSerializer.Deserialize<PermissionRequest>(permissionRequestData.GetRawText())
+        var request = JsonSerializer.Deserialize(permissionRequestData.GetRawText(), SessionJsonContext.Default.PermissionRequest)
             ?? throw new InvalidOperationException("Failed to deserialize permission request");
 
         var invocation = new PermissionInvocation
@@ -328,7 +331,7 @@ public class CopilotSession : IAsyncDisposable
     /// var events = await session.GetMessagesAsync();
     /// foreach (var evt in events)
     /// {
-    ///     if (evt.Type == "assistant.message")
+    ///     if (evt is AssistantMessageEvent)
     ///     {
     ///         Console.WriteLine($"Assistant: {evt.Data?.Content}");
     ///     }
@@ -338,7 +341,7 @@ public class CopilotSession : IAsyncDisposable
     public async Task<IReadOnlyList<SessionEvent>> GetMessagesAsync(CancellationToken cancellationToken = default)
     {
         var response = await _rpc.InvokeWithCancellationAsync<GetMessagesResponse>(
-            "session.getMessages", [new { sessionId = SessionId }], cancellationToken);
+            "session.getMessages", [new GetMessagesRequest { SessionId = SessionId }], cancellationToken);
 
         return response.Events
             .Select(e => SessionEvent.FromJson(e.ToJsonString()))
@@ -372,7 +375,7 @@ public class CopilotSession : IAsyncDisposable
     public async Task AbortAsync(CancellationToken cancellationToken = default)
     {
         await _rpc.InvokeWithCancellationAsync<object>(
-            "session.abort", [new { sessionId = SessionId }], cancellationToken);
+            "session.abort", [new SessionAbortRequest { SessionId = SessionId }], cancellationToken);
     }
 
     /// <summary>
@@ -403,7 +406,7 @@ public class CopilotSession : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         await _rpc.InvokeWithCancellationAsync<object>(
-            "session.destroy", [new { sessionId = SessionId }]);
+            "session.destroy", [new SessionDestroyRequest() { SessionId = SessionId }]);
 
         _eventHandlers.Clear();
         _toolHandlers.Clear();
@@ -424,7 +427,7 @@ public class CopilotSession : IAsyncDisposable
         public void Dispose() => callback();
     }
 
-    private record SendMessageRequest
+    internal record SendMessageRequest
     {
         public string SessionId { get; init; } = string.Empty;
         public string Prompt { get; init; } = string.Empty;
@@ -432,13 +435,43 @@ public class CopilotSession : IAsyncDisposable
         public string? Mode { get; init; }
     }
 
-    private record SendMessageResponse
+    internal record SendMessageResponse
     {
         public string MessageId { get; init; } = string.Empty;
     }
 
-    private record GetMessagesResponse
+    internal record GetMessagesRequest
+    {
+        public string SessionId { get; init; } = string.Empty;
+    }
+
+    internal record GetMessagesResponse
     {
         public List<JsonObject> Events { get; init; } = new();
     }
+
+    internal record SessionAbortRequest
+    {
+        public string SessionId { get; init; } = string.Empty;
+    }
+
+    internal record SessionDestroyRequest
+    {
+        public string SessionId { get; init; } = string.Empty;
+    }
+
+    [JsonSourceGenerationOptions(
+        JsonSerializerDefaults.Web,
+        AllowOutOfOrderMetadataProperties = true,
+        NumberHandling = JsonNumberHandling.AllowReadingFromString,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
+    [JsonSerializable(typeof(GetMessagesRequest))]
+    [JsonSerializable(typeof(GetMessagesResponse))]
+    [JsonSerializable(typeof(PermissionRequest))]
+    [JsonSerializable(typeof(SendMessageRequest))]
+    [JsonSerializable(typeof(SendMessageResponse))]
+    [JsonSerializable(typeof(SessionAbortRequest))]
+    [JsonSerializable(typeof(SessionDestroyRequest))]
+    [JsonSerializable(typeof(UserMessageDataAttachmentsItem))]
+    internal partial class SessionJsonContext : JsonSerializerContext;
 }

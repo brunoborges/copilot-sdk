@@ -113,7 +113,7 @@ jobs:
           # COPILOT_HMAC_KEY: ${{ secrets.COPILOT_DEVELOPER_CLI_INTEGRATION_HMAC_KEY }}
           COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
           COPILOT_CLI_PATH: ${{ steps.cli-path.outputs.path }}
-        run: ./test.sh
+        run: /bin/bash test.sh
 
   python-sdk:
     name: "Python SDK Tests"

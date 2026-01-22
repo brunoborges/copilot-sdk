@@ -98,7 +98,7 @@ function schemaTypeToCSharp(
     if (type === "string") {
         if (format === "uuid") return required ? "Guid" : "Guid?";
         if (format === "date-time") return required ? "DateTimeOffset" : "DateTimeOffset?";
-        return "string";
+        return required ? "string" : "string?";
     }
     if (type === "number" || type === "integer") {
         return required ? "double" : "double?";
@@ -109,21 +109,21 @@ function schemaTypeToCSharp(
     if (type === "array") {
         const items = schema.items as JSONSchema7 | undefined;
         const itemType = items ? schemaTypeToCSharp(items, true, knownTypes) : "object";
-        return `${itemType}[]`;
+        return required ? `${itemType}[]` : `${itemType}[]?`;
     }
     if (type === "object") {
         if (schema.additionalProperties) {
             const valueSchema = schema.additionalProperties;
             if (typeof valueSchema === "object") {
                 const valueType = schemaTypeToCSharp(valueSchema as JSONSchema7, true, knownTypes);
-                return `Dictionary<string, ${valueType}>`;
+                return required ? `Dictionary<string, ${valueType}>` : `Dictionary<string, ${valueType}>?`;
             }
-            return "Dictionary<string, object>";
+            return required ? "Dictionary<string, object>" : "Dictionary<string, object>?";
         }
-        return "object";
+        return required ? "object" : "object?";
     }
 
-    return "object";
+    return required ? "object" : "object?";
 }
 
 /**
@@ -167,16 +167,17 @@ function getOrCreateEnum(
     const enumName = generateEnumName(parentClassName, propName);
     generatedEnums.set(enumName, { enumName, values });
 
-    // Generate the enum code
-    // Use [JsonStringEnumConverter(JsonNamingPolicy.CamelCase)] to serialize PascalCase enum members to camelCase JSON values
+    // Generate the enum code with JsonConverter and JsonStringEnumMemberName attributes
     const lines: string[] = [];
-    lines.push(`    public enum ${enumName}`);
-    lines.push(`    {`);
+    lines.push(`[JsonConverter(typeof(JsonStringEnumConverter<${enumName}>))]`);
+    lines.push(`public enum ${enumName}`);
+    lines.push(`{`);
     for (const value of values) {
         const memberName = toPascalCaseEnumMember(value);
-        lines.push(`        ${memberName},`);
+        lines.push(`    [JsonStringEnumMemberName("${value}")]`);
+        lines.push(`    ${memberName},`);
     }
-    lines.push(`    }`);
+    lines.push(`}`);
     lines.push("");
 
     enumOutput.push(lines.join("\n"));
@@ -234,7 +235,6 @@ function extractEventVariants(schema: JSONSchema7): EventVariant[] {
  */
 function generateDataClass(
     variant: EventVariant,
-    indent: string,
     knownTypes: Map<string, string>,
     nestedClasses: Map<string, string>,
     enumOutput: string[]
@@ -243,14 +243,14 @@ function generateDataClass(
     const dataSchema = variant.dataSchema;
 
     if (!dataSchema?.properties) {
-        lines.push(`${indent}public partial class ${variant.dataClassName} { }`);
+        lines.push(`public partial class ${variant.dataClassName} { }`);
         return lines.join("\n");
     }
 
     const required = new Set(dataSchema.required || []);
 
-    lines.push(`${indent}public partial class ${variant.dataClassName}`);
-    lines.push(`${indent}{`);
+    lines.push(`public partial class ${variant.dataClassName}`);
+    lines.push(`{`);
 
     for (const [propName, propSchema] of Object.entries(dataSchema.properties)) {
         if (typeof propSchema !== "object") continue;
@@ -262,19 +262,21 @@ function generateDataClass(
             variant.dataClassName,
             csharpName,
             isRequired,
-            indent,
             knownTypes,
             nestedClasses,
             enumOutput
         );
 
+        const isNullableType = csharpType.endsWith("?");
         if (!isRequired) {
             lines.push(
-                `${indent}    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]`
+                `    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]`
             );
         }
-        lines.push(`${indent}    [JsonPropertyName("${propName}")]`);
-        lines.push(`${indent}    public ${csharpType} ${csharpName} { get; set; }`);
+        lines.push(`    [JsonPropertyName("${propName}")]`);
+
+        const requiredModifier = isRequired && !isNullableType ? "required " : "";
+        lines.push(`    public ${requiredModifier}${csharpType} ${csharpName} { get; set; }`);
         lines.push("");
     }
 
@@ -283,7 +285,7 @@ function generateDataClass(
         lines.pop();
     }
 
-    lines.push(`${indent}}`);
+    lines.push(`}`);
     return lines.join("\n");
 }
 
@@ -294,7 +296,6 @@ function generateDataClass(
 function generateNestedClass(
     className: string,
     schema: JSONSchema7,
-    indent: string,
     knownTypes: Map<string, string>,
     nestedClasses: Map<string, string>,
     enumOutput: string[]
@@ -302,8 +303,8 @@ function generateNestedClass(
     const lines: string[] = [];
     const required = new Set(schema.required || []);
 
-    lines.push(`${indent}public partial class ${className}`);
-    lines.push(`${indent}{`);
+    lines.push(`public partial class ${className}`);
+    lines.push(`{`);
 
     if (schema.properties) {
         for (const [propName, propSchema] of Object.entries(schema.properties)) {
@@ -316,7 +317,6 @@ function generateNestedClass(
                 className,
                 csharpName,
                 isRequired,
-                indent,
                 knownTypes,
                 nestedClasses,
                 enumOutput
@@ -324,11 +324,14 @@ function generateNestedClass(
 
             if (!isRequired) {
                 lines.push(
-                    `${indent}    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]`
+                    `    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]`
                 );
             }
-            lines.push(`${indent}    [JsonPropertyName("${propName}")]`);
-            lines.push(`${indent}    public ${csharpType} ${csharpName} { get; set; }`);
+            lines.push(`    [JsonPropertyName("${propName}")]`);
+
+            const isNullableType = csharpType.endsWith("?");
+            const requiredModifier = isRequired && !isNullableType ? "required " : "";
+            lines.push(`    public ${requiredModifier}${csharpType} ${csharpName} { get; set; }`);
             lines.push("");
         }
     }
@@ -338,7 +341,7 @@ function generateNestedClass(
         lines.pop();
     }
 
-    lines.push(`${indent}}`);
+    lines.push(`}`);
     return lines.join("\n");
 }
 
@@ -351,31 +354,32 @@ function resolvePropertyType(
     parentClassName: string,
     propName: string,
     isRequired: boolean,
-    indent: string,
     knownTypes: Map<string, string>,
     nestedClasses: Map<string, string>,
     enumOutput: string[]
 ): string {
     // Handle anyOf - simplify to nullable of the non-null type or object
     if (propSchema.anyOf) {
+        const hasNull = propSchema.anyOf.some(
+            (s) => typeof s === "object" && (s as JSONSchema7).type === "null"
+        );
         const nonNullTypes = propSchema.anyOf.filter(
             (s) => typeof s === "object" && (s as JSONSchema7).type !== "null"
         );
         if (nonNullTypes.length === 1) {
-            // Simple nullable - recurse with the inner type
+            // Simple nullable - recurse with the inner type, marking as not required if null is an option
             return resolvePropertyType(
                 nonNullTypes[0] as JSONSchema7,
                 parentClassName,
                 propName,
-                false,
-                indent,
+                isRequired && !hasNull,
                 knownTypes,
                 nestedClasses,
                 enumOutput
             );
         }
-        // Complex union - use object
-        return "object";
+        // Complex union - use object, nullable if null is in the union or property is not required
+        return (hasNull || !isRequired) ? "object?" : "object";
     }
 
     // Handle enum types
@@ -395,7 +399,6 @@ function resolvePropertyType(
         const nestedCode = generateNestedClass(
             nestedClassName,
             propSchema,
-            indent,
             knownTypes,
             nestedClasses,
             enumOutput
@@ -414,13 +417,12 @@ function resolvePropertyType(
             const nestedCode = generateNestedClass(
                 itemClassName,
                 items,
-                indent,
                 knownTypes,
                 nestedClasses,
                 enumOutput
             );
             nestedClasses.set(itemClassName, nestedCode);
-            return `${itemClassName}[]`;
+            return isRequired ? `${itemClassName}[]` : `${itemClassName}[]?`;
         }
 
         // Array of enums
@@ -431,7 +433,7 @@ function resolvePropertyType(
                 items.enum as string[],
                 enumOutput
             );
-            return `${enumName}[]`;
+            return isRequired ? `${enumName}[]` : `${enumName}[]?`;
         }
 
         // Simple array type
@@ -443,7 +445,7 @@ function resolvePropertyType(
             propName,
             enumOutput
         );
-        return `${itemType}[]`;
+        return isRequired ? `${itemType}[]` : `${itemType}[]?`;
     }
 
     // Default: use basic type mapping
@@ -468,7 +470,6 @@ export function generateCSharpSessionTypes(schema: JSONSchema7, generatedAt: str
     const knownTypes = new Map<string, string>();
     const nestedClasses = new Map<string, string>();
     const enumOutput: string[] = [];
-    const indent = "    ";
 
     const lines: string[] = [];
 
@@ -487,132 +488,83 @@ export function generateCSharpSessionTypes(schema: JSONSchema7, generatedAt: str
 // 1. Update the schema in copilot-agent-runtime
 // 2. Run: npm run generate:session-types
 
-// <auto-generated />
-#nullable enable
-#pragma warning disable CS8618
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
-namespace GitHub.Copilot.SDK
-{
-    using System;
-    using System.Collections.Generic;
-    using System.Text.Json;
-    using System.Text.Json.Nodes;
-    using System.Text.Json.Serialization;
+namespace GitHub.Copilot.SDK;
 `);
 
-    // Generate the custom converter class
-    lines.push(`${indent}/// <summary>`);
+    // Generate base class with JsonPolymorphic attributes
+    lines.push(`/// <summary>`);
     lines.push(
-        `${indent}/// Custom JSON converter for SessionEvent that handles discriminator appearing anywhere in JSON.`
+        `/// Base class for all session events with polymorphic JSON serialization.`
     );
-    lines.push(`${indent}/// </summary>`);
-    lines.push(`${indent}internal class SessionEventConverter : JsonConverter<SessionEvent>`);
-    lines.push(`${indent}{`);
-    lines.push(`${indent}    private static readonly Dictionary<string, Type> TypeMap = new()`);
-    lines.push(`${indent}    {`);
-    for (const variant of variants) {
-        lines.push(`${indent}        ["${variant.typeName}"] = typeof(${variant.className}),`);
+    lines.push(`/// </summary>`);
+    lines.push(`[JsonPolymorphic(`);
+    lines.push(`    TypeDiscriminatorPropertyName = "type",`);
+    lines.push(
+        `    UnknownDerivedTypeHandling = JsonUnknownDerivedTypeHandling.FailSerialization)]`
+    );
+
+    // Generate JsonDerivedType attributes for each variant (alphabetized)
+    for (const variant of [...variants].sort((a, b) => a.typeName.localeCompare(b.typeName))) {
+        lines.push(
+            `[JsonDerivedType(typeof(${variant.className}), "${variant.typeName}")]`
+        );
     }
-    lines.push(`${indent}    };`);
-    lines.push("");
-    lines.push(
-        `${indent}    public override SessionEvent? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)`
-    );
-    lines.push(`${indent}    {`);
-    lines.push(
-        `${indent}        // Parse as JsonNode to find the discriminator regardless of property order`
-    );
-    lines.push(`${indent}        var node = JsonNode.Parse(ref reader);`);
-    lines.push(`${indent}        if (node is not JsonObject obj)`);
-    lines.push(`${indent}            throw new JsonException("Expected JSON object");`);
-    lines.push("");
-    lines.push(`${indent}        var typeProp = obj["type"]?.GetValue<string>();`);
-    lines.push(`${indent}        if (string.IsNullOrEmpty(typeProp))`);
-    lines.push(
-        `${indent}            throw new JsonException("Missing 'type' discriminator property");`
-    );
-    lines.push("");
-    lines.push(`${indent}        if (!TypeMap.TryGetValue(typeProp, out var targetType))`);
-    lines.push(`${indent}            throw new JsonException($"Unknown event type: {typeProp}");`);
-    lines.push("");
-    lines.push(
-        `${indent}        // Deserialize to the concrete type without using this converter (to avoid recursion)`
-    );
-    lines.push(
-        `${indent}        return (SessionEvent?)obj.Deserialize(targetType, SerializerOptions.WithoutConverter);`
-    );
-    lines.push(`${indent}    }`);
-    lines.push("");
-    lines.push(
-        `${indent}    public override void Write(Utf8JsonWriter writer, SessionEvent value, JsonSerializerOptions options)`
-    );
-    lines.push(`${indent}    {`);
-    lines.push(
-        `${indent}        JsonSerializer.Serialize(writer, value, value.GetType(), SerializerOptions.WithoutConverter);`
-    );
-    lines.push(`${indent}    }`);
-    lines.push(`${indent}}`);
-    lines.push("");
 
-    // Generate base class (no longer needs JsonPolymorphic attributes since we use custom converter)
-    lines.push(`${indent}/// <summary>`);
+    lines.push(`public abstract partial class SessionEvent`);
+    lines.push(`{`);
+    lines.push(`    [JsonPropertyName("id")]`);
+    lines.push(`    public Guid Id { get; set; }`);
+    lines.push("");
+    lines.push(`    [JsonPropertyName("timestamp")]`);
+    lines.push(`    public DateTimeOffset Timestamp { get; set; }`);
+    lines.push("");
+    lines.push(`    [JsonPropertyName("parentId")]`);
+    lines.push(`    public Guid? ParentId { get; set; }`);
+    lines.push("");
+    lines.push(`    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]`);
+    lines.push(`    [JsonPropertyName("ephemeral")]`);
+    lines.push(`    public bool? Ephemeral { get; set; }`);
+    lines.push("");
+    lines.push(`    /// <summary>`);
+    lines.push(`    /// The event type discriminator.`);
+    lines.push(`    /// </summary>`);
+    lines.push(`    [JsonIgnore]`);
+    lines.push(`    public abstract string Type { get; }`);
+    lines.push("");
+    lines.push(`    public static SessionEvent FromJson(string json) =>`);
     lines.push(
-        `${indent}/// Base class for all session events with polymorphic JSON serialization.`
-    );
-    lines.push(`${indent}/// </summary>`);
-    lines.push(`${indent}[JsonConverter(typeof(SessionEventConverter))]`);
-
-    lines.push(`${indent}public abstract partial class SessionEvent`);
-    lines.push(`${indent}{`);
-    lines.push(`${indent}    [JsonPropertyName("id")]`);
-    lines.push(`${indent}    public Guid Id { get; set; }`);
-    lines.push("");
-    lines.push(`${indent}    [JsonPropertyName("timestamp")]`);
-    lines.push(`${indent}    public DateTimeOffset Timestamp { get; set; }`);
-    lines.push("");
-    lines.push(`${indent}    [JsonPropertyName("parentId")]`);
-    lines.push(`${indent}    public Guid? ParentId { get; set; }`);
-    lines.push("");
-    lines.push(`${indent}    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]`);
-    lines.push(`${indent}    [JsonPropertyName("ephemeral")]`);
-    lines.push(`${indent}    public bool? Ephemeral { get; set; }`);
-    lines.push("");
-    lines.push(`${indent}    /// <summary>`);
-    lines.push(`${indent}    /// The event type discriminator.`);
-    lines.push(`${indent}    /// </summary>`);
-    lines.push(`${indent}    [JsonPropertyName("type")]`);
-    lines.push(`${indent}    public abstract string Type { get; }`);
-    lines.push("");
-    lines.push(`${indent}    public static SessionEvent FromJson(string json) =>`);
-    lines.push(
-        `${indent}        JsonSerializer.Deserialize<SessionEvent>(json, SerializerOptions.Default)!;`
+        `        JsonSerializer.Deserialize(json, SessionEventsJsonContext.Default.SessionEvent)!;`
     );
     lines.push("");
-    lines.push(`${indent}    public string ToJson() =>`);
+    lines.push(`    public string ToJson() =>`);
     lines.push(
-        `${indent}        JsonSerializer.Serialize(this, GetType(), SerializerOptions.Default);`
+        `        JsonSerializer.Serialize(this, SessionEventsJsonContext.Default.SessionEvent);`
     );
-    lines.push(`${indent}}`);
+    lines.push(`}`);
     lines.push("");
 
     // Generate each event class
     for (const variant of variants) {
-        lines.push(`${indent}/// <summary>`);
-        lines.push(`${indent}/// Event: ${variant.typeName}`);
-        lines.push(`${indent}/// </summary>`);
-        lines.push(`${indent}public partial class ${variant.className} : SessionEvent`);
-        lines.push(`${indent}{`);
-        lines.push(`${indent}    public override string Type => "${variant.typeName}";`);
+        lines.push(`/// <summary>`);
+        lines.push(`/// Event: ${variant.typeName}`);
+        lines.push(`/// </summary>`);
+        lines.push(`public partial class ${variant.className} : SessionEvent`);
+        lines.push(`{`);
+        lines.push(`    [JsonIgnore]`);
+        lines.push(`    public override string Type => "${variant.typeName}";`);
         lines.push("");
-        lines.push(`${indent}    [JsonPropertyName("data")]`);
-        lines.push(`${indent}    public ${variant.dataClassName} Data { get; set; }`);
-        lines.push(`${indent}}`);
+        lines.push(`    [JsonPropertyName("data")]`);
+        lines.push(`    public required ${variant.dataClassName} Data { get; set; }`);
+        lines.push(`}`);
         lines.push("");
     }
 
     // Generate data classes
     for (const variant of variants) {
-        const dataClass = generateDataClass(variant, indent, knownTypes, nestedClasses, enumOutput);
+        const dataClass = generateDataClass(variant, knownTypes, nestedClasses, enumOutput);
         lines.push(dataClass);
         lines.push("");
     }
@@ -628,44 +580,36 @@ namespace GitHub.Copilot.SDK
         lines.push(enumCode);
     }
 
-    // Generate serializer options
-    lines.push(`${indent}internal static class SerializerOptions`);
-    lines.push(`${indent}{`);
-    lines.push(`${indent}    /// <summary>`);
-    lines.push(
-        `${indent}    /// Default options with SessionEventConverter for polymorphic deserialization.`
-    );
-    lines.push(`${indent}    /// </summary>`);
-    lines.push(`${indent}    public static readonly JsonSerializerOptions Default = new()`);
-    lines.push(`${indent}    {`);
-    lines.push(`${indent}        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,`);
-    lines.push(`${indent}        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,`);
-    lines.push(
-        `${indent}        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }`
-    );
-    lines.push(`${indent}    };`);
-    lines.push("");
-    lines.push(`${indent}    /// <summary>`);
-    lines.push(
-        `${indent}    /// Options without SessionEventConverter, used internally by the converter to avoid recursion.`
-    );
-    lines.push(`${indent}    /// </summary>`);
-    lines.push(
-        `${indent}    internal static readonly JsonSerializerOptions WithoutConverter = new()`
-    );
-    lines.push(`${indent}    {`);
-    lines.push(`${indent}        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,`);
-    lines.push(`${indent}        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,`);
-    lines.push(
-        `${indent}        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }`
-    );
-    lines.push(`${indent}    };`);
-    lines.push(`${indent}}`);
+    // Collect all serializable types (sorted alphabetically)
+    const serializableTypes: string[] = [];
 
-    // Close namespace
-    lines.push(`}`);
-    lines.push("");
-    lines.push(`#pragma warning restore CS8618`);
+    // Add SessionEvent base class
+    serializableTypes.push("SessionEvent");
+
+    // Add all event classes and their data classes
+    for (const variant of variants) {
+        serializableTypes.push(variant.className);
+        serializableTypes.push(variant.dataClassName);
+    }
+
+    // Add all nested classes
+    for (const [className] of nestedClasses) {
+        serializableTypes.push(className);
+    }
+
+    // Sort alphabetically
+    serializableTypes.sort((a, b) => a.localeCompare(b));
+
+    // Generate JsonSerializerContext with JsonSerializable attributes
+    lines.push(`[JsonSourceGenerationOptions(`);
+    lines.push(`    JsonSerializerDefaults.Web,`);
+    lines.push(`    AllowOutOfOrderMetadataProperties = true,`);
+    lines.push(`    NumberHandling = JsonNumberHandling.AllowReadingFromString,`);
+    lines.push(`    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]`);
+    for (const typeName of serializableTypes) {
+        lines.push(`[JsonSerializable(typeof(${typeName}))]`);
+    }
+    lines.push(`internal partial class SessionEventsJsonContext : JsonSerializerContext;`);
 
     return lines.join("\n");
 }
