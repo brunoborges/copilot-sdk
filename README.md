@@ -2,6 +2,10 @@
 
 ![GitHub Copilot SDK](./assets/RepoHeader_01.png)
 
+[![NPM Downloads](https://img.shields.io/npm/dm/%40github%2Fcopilot-sdk?label=npm)](https://www.npmjs.com/package/@github/copilot-sdk)
+[![PyPI - Downloads](https://img.shields.io/pypi/dm/github-copilot-sdk?label=PyPI)](https://pypi.org/project/github-copilot-sdk/)
+[![NuGet Downloads](https://img.shields.io/nuget/dt/GitHub.Copilot.SDK?label=NuGet)](https://www.nuget.org/packages/GitHub.Copilot.SDK)
+
 Agents for every app.
 
 Embed Copilot's agentic workflows in your application—now available in Technical preview as a programmable SDK for Python, TypeScript, Go, and .NET.
@@ -59,7 +63,7 @@ Billing for the GitHub Copilot SDK is based on the same model as the Copilot CLI
 
 ### Does it support BYOK (Bring Your Own Key)?
 
-Yes, the GitHub Copilot SDK supports BYOK. You can configure the SDK to use your own encryption keys for data security. Refer to the individual SDK documentation for instructions on setting up BYOK.
+Yes, the GitHub Copilot SDK supports BYOK (Bring Your Own Key). You can configure the SDK to use your own API keys from supported LLM providers (e.g. OpenAI, Azure, Anthropic) to access models through those providers. Refer to the individual SDK documentation for instructions on setting up BYOK.
 
 ### Do I need to install the Copilot CLI separately?
 
@@ -93,7 +97,23 @@ Please use the [GitHub Issues](https://github.com/github/copilot-sdk/issues) pag
 
 - **[Getting Started](./docs/getting-started.md)** – Tutorial to get up and running
 - **[Cookbook](./cookbook/README.md)** – Practical recipes for common tasks across all languages
-- **[Samples](./samples/README.md)** – Video walkthroughs and sample projects
+- **[More Resources](https://github.com/github/awesome-copilot/blob/main/collections/copilot-sdk.md)** – Additional examples, tutorials, and community resources
+
+## Unofficial, Community-maintained SDKs
+
+⚠️ Disclaimer: These are unofficial, community-driven SDKs and they are not supported by GitHub. Use at your own risk.
+
+| SDK           | Location                                           |
+| --------------| -------------------------------------------------- |
+| **Java**      | [copilot-community-sdk/copilot-sdk-java][sdk-java] |
+| **Rust**      | [copilot-community-sdk/copilot-sdk-rust][sdk-rust] |
+| **C++**       | [0xeb/copilot-sdk-cpp][sdk-cpp]                    |
+| **Clojure**   | [krukow/copilot-sdk-clojure][sdk-clojure]          |
+
+[sdk-java]: https://github.com/copilot-community-sdk/copilot-sdk-java
+[sdk-rust]: https://github.com/copilot-community-sdk/copilot-sdk-rust
+[sdk-cpp]: https://github.com/0xeb/copilot-sdk-cpp
+[sdk-clojure]: https://github.com/krukow/copilot-sdk-clojure
 
 ## Contributing
 
