@@ -101,7 +101,7 @@ jobs:
       - name: Pack
         run: npm pack
       - name: Upload artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7.0.0
         with:
           name: nodejs-package
           path: nodejs/*.tgz
@@ -125,7 +125,7 @@ jobs:
       - name: Build and pack
         run: dotnet pack src/GitHub.Copilot.SDK.csproj -c Release -p:Version=${{ needs.version.outputs.version }} -o ./artifacts
       - name: Upload artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7.0.0
         with:
           name: dotnet-package
           path: dotnet/artifacts/*.nupkg
@@ -160,7 +160,7 @@ jobs:
       - name: Build package
         run: uv build
       - name: Upload artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7.0.0
         with:
           name: python-package
           path: python/dist/*
