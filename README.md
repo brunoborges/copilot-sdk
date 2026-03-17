@@ -20,7 +20,7 @@ The GitHub Copilot SDK exposes the same engine behind Copilot CLI: a production-
 | **Python**               | [`python/`](./python/)   | [Cookbook](https://github.com/github/awesome-copilot/blob/main/cookbook/copilot-sdk/python/README.md) | `pip install github-copilot-sdk`          |
 | **Go**                   | [`go/`](./go/)           | [Cookbook](https://github.com/github/awesome-copilot/blob/main/cookbook/copilot-sdk/go/README.md)     | `go get github.com/github/copilot-sdk/go` |
 | **.NET**                 | [`dotnet/`](./dotnet/)   | [Cookbook](https://github.com/github/awesome-copilot/blob/main/cookbook/copilot-sdk/dotnet/README.md) | `dotnet add package GitHub.Copilot.SDK`   |
-| **Java**                 | [`github/copilot-sdk-java`](https://github.com/github/copilot-sdk-java)   | WIP | See installation in the Java SDK README. |
+| **Java**                 | [`github/copilot-sdk-java`](https://github.com/github/copilot-sdk-java)   | WIP | See instructions for [Maven](https://github.com/github/copilot-sdk-java?tab=readme-ov-file#maven) and [Gradle](https://github.com/github/copilot-sdk-java?tab=readme-ov-file#gradle) |
 
 See the individual SDK READMEs for installation, usage examples, and API reference.
 
@@ -98,7 +98,7 @@ Yes, check out the custom instructions for each SDK:
 - **[Python](https://github.com/github/awesome-copilot/blob/main/instructions/copilot-sdk-python.instructions.md)**
 - **[.NET](https://github.com/github/awesome-copilot/blob/main/instructions/copilot-sdk-csharp.instructions.md)**
 - **[Go](https://github.com/github/awesome-copilot/blob/main/instructions/copilot-sdk-go.instructions.md)**
-- **[Java](https://github.com/copilot-community-sdk/blob/main/instructions/copilot-sdk-java/copilot-sdk-go.instructions.md)**
+- **[Java](https://github.com/github/copilot-sdk-java/blob/main/instructions/copilot-sdk-java.instructions.md)**
 
 
 ### What models are supported?
