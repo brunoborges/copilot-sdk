@@ -10,13 +10,14 @@
 import type { MessageConnection } from "vscode-jsonrpc/node.js";
 import { ConnectionError, ResponseError } from "vscode-jsonrpc/node.js";
 import { createSessionRpc } from "./generated/rpc.js";
+import type { ClientSessionApiHandlers } from "./generated/rpc.js";
 import { getTraceContext } from "./telemetry.js";
 import type {
     CommandHandler,
     ElicitationHandler,
     ElicitationParams,
     ElicitationResult,
-    ElicitationRequest,
+    ElicitationContext,
     InputOptions,
     MessageOptions,
     PermissionHandler,
@@ -33,6 +34,8 @@ import type {
     SessionUiApi,
     Tool,
     ToolHandler,
+    ToolResult,
+    ToolResultObject,
     TraceContextProvider,
     TypedSessionEventHandler,
     UserInputHandler,
@@ -85,6 +88,9 @@ export class CopilotSession {
     private _rpc: ReturnType<typeof createSessionRpc> | null = null;
     private traceContextProvider?: TraceContextProvider;
     private _capabilities: SessionCapabilities = {};
+
+    /** @internal Client session API handlers, populated by CopilotClient during create/resume. */
+    clientSessionApis: ClientSessionApiHandlers = {};
 
     /**
      * Creates a new CopilotSession instance.
@@ -402,10 +408,14 @@ export class CopilotSession {
                 );
             }
         } else if (event.type === "permission.requested") {
-            const { requestId, permissionRequest } = event.data as {
+            const { requestId, permissionRequest, resolvedByHook } = event.data as {
                 requestId: string;
                 permissionRequest: PermissionRequest;
+                resolvedByHook?: boolean;
             };
+            if (resolvedByHook) {
+                return; // Already resolved by a permissionRequest hook; no client action needed.
+            }
             if (this.permissionHandler) {
                 void this._executePermissionAndRespond(requestId, permissionRequest);
             }
@@ -423,8 +433,9 @@ export class CopilotSession {
                     event.data;
                 void this._handleElicitationRequest(
                     {
+                        sessionId: this.sessionId,
                         message,
-                        requestedSchema: requestedSchema as ElicitationRequest["requestedSchema"],
+                        requestedSchema: requestedSchema as ElicitationContext["requestedSchema"],
                         mode,
                         elicitationSource,
                         url,
@@ -459,10 +470,12 @@ export class CopilotSession {
                 traceparent,
                 tracestate,
             });
-            let result: string;
+            let result: ToolResult;
             if (rawResult == null) {
                 result = "";
             } else if (typeof rawResult === "string") {
+                result = rawResult;
+            } else if (isToolResultObject(rawResult)) {
                 result = rawResult;
             } else {
                 result = JSON.stringify(rawResult);
@@ -616,12 +629,12 @@ export class CopilotSession {
      * Invokes the registered handler and responds via handlePendingElicitation RPC.
      * @internal
      */
-    async _handleElicitationRequest(request: ElicitationRequest, requestId: string): Promise<void> {
+    async _handleElicitationRequest(context: ElicitationContext, requestId: string): Promise<void> {
         if (!this.elicitationHandler) {
             return;
         }
         try {
-            const result = await this.elicitationHandler(request, { sessionId: this.sessionId });
+            const result = await this.elicitationHandler(context);
             await this.rpc.ui.handlePendingElicitation({ requestId, result });
         } catch {
             // Handler failed — attempt to cancel so the request doesn't hang
@@ -1042,4 +1055,35 @@ export class CopilotSession {
     ): Promise<void> {
         await this.rpc.log({ message, ...options });
     }
+}
+
+/**
+ * Type guard that checks whether a value is a {@link ToolResultObject}.
+ * A valid object must have a string `textResultForLlm` and a recognized `resultType`.
+ */
+function isToolResultObject(value: unknown): value is ToolResultObject {
+    if (typeof value !== "object" || value === null) {
+        return false;
+    }
+
+    if (
+        !("textResultForLlm" in value) ||
+        typeof (value as ToolResultObject).textResultForLlm !== "string"
+    ) {
+        return false;
+    }
+
+    if (!("resultType" in value) || typeof (value as ToolResultObject).resultType !== "string") {
+        return false;
+    }
+
+    const allowedResultTypes: Array<ToolResultObject["resultType"]> = [
+        "success",
+        "failure",
+        "rejected",
+        "denied",
+        "timeout",
+    ];
+
+    return allowedResultTypes.includes((value as ToolResultObject).resultType);
 }

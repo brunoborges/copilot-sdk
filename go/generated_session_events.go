@@ -358,7 +358,7 @@ type Data struct {
 	// ISO 8601 timestamp when the session was resumed
 	ResumeTime *time.Time `json:"resumeTime,omitempty"`
 	// Category of error (e.g., "authentication", "authorization", "quota", "rate_limit",
-	// "query")
+	// "context_limit", "query")
 	ErrorType *string `json:"errorType,omitempty"`
 	// Human-readable error message
 	//
@@ -385,6 +385,8 @@ type Data struct {
 	//
 	// URL to open in the user's browser (url mode only)
 	URL *string `json:"url,omitempty"`
+	// True when the preceding agentic loop was cancelled via abort signal
+	Aborted *bool `json:"aborted,omitempty"`
 	// Background tasks still running when the agent became idle
 	BackgroundTasks *BackgroundTasks `json:"backgroundTasks,omitempty"`
 	// The new display title for the session
@@ -799,6 +801,9 @@ type Data struct {
 	Kind *KindClass `json:"kind,omitempty"`
 	// Details of the permission being requested
 	PermissionRequest *PermissionRequest `json:"permissionRequest,omitempty"`
+	// When true, this permission was already resolved by a permissionRequest hook and requires
+	// no client action
+	ResolvedByHook *bool `json:"resolvedByHook,omitempty"`
 	// Whether the user can provide a free-form text response in addition to predefined choices
 	AllowFreeform *bool `json:"allowFreeform,omitempty"`
 	// Predefined choices for the user to select from, if applicable
@@ -856,7 +861,7 @@ type Data struct {
 	Warnings []string `json:"warnings,omitempty"`
 	// Array of MCP server status summaries
 	Servers []Server `json:"servers,omitempty"`
-	// New connection status: connected, failed, pending, disabled, or not_configured
+	// New connection status: connected, failed, needs-auth, pending, disabled, or not_configured
 	Status *ServerStatus `json:"status,omitempty"`
 	// Array of discovered extensions and their status
 	Extensions []Extension `json:"extensions,omitempty"`
@@ -1368,7 +1373,7 @@ type Server struct {
 	Name string `json:"name"`
 	// Configuration source: user, workspace, plugin, or builtin
 	Source *string `json:"source,omitempty"`
-	// Connection status: connected, failed, pending, disabled, or not_configured
+	// Connection status: connected, failed, needs-auth, pending, disabled, or not_configured
 	Status ServerStatus `json:"status"`
 }
 
@@ -1401,6 +1406,8 @@ type ToolRequest struct {
 	Arguments interface{} `json:"arguments"`
 	// Resolved intention summary describing what this specific call does
 	IntentionSummary *string `json:"intentionSummary"`
+	// Name of the MCP server hosting this tool, when the tool is an MCP tool
+	MCPServerName *string `json:"mcpServerName,omitempty"`
 	// Name of the tool being invoked
 	Name string `json:"name"`
 	// Unique identifier for this tool call
@@ -1554,6 +1561,7 @@ type ResultKind string
 const (
 	ResultKindApproved                                       ResultKind = "approved"
 	ResultKindDeniedByContentExclusionPolicy                 ResultKind = "denied-by-content-exclusion-policy"
+	ResultKindDeniedByPermissionRequestHook                  ResultKind = "denied-by-permission-request-hook"
 	ResultKindDeniedByRules                                  ResultKind = "denied-by-rules"
 	ResultKindDeniedInteractivelyByUser                      ResultKind = "denied-interactively-by-user"
 	ResultKindDeniedNoApprovalRuleAndCouldNotRequestFromUser ResultKind = "denied-no-approval-rule-and-could-not-request-from-user"
@@ -1567,14 +1575,15 @@ const (
 	RoleSystem    Role = "system"
 )
 
-// Connection status: connected, failed, pending, disabled, or not_configured
+// Connection status: connected, failed, needs-auth, pending, disabled, or not_configured
 //
-// New connection status: connected, failed, pending, disabled, or not_configured
+// New connection status: connected, failed, needs-auth, pending, disabled, or not_configured
 type ServerStatus string
 
 const (
 	ServerStatusConnected     ServerStatus = "connected"
 	ServerStatusDisabled      ServerStatus = "disabled"
+	ServerStatusNeedsAuth     ServerStatus = "needs-auth"
 	ServerStatusNotConfigured ServerStatus = "not_configured"
 	ServerStatusPending       ServerStatus = "pending"
 	ServerStatusFailed        ServerStatus = "failed"

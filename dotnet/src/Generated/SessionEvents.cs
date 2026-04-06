@@ -1180,7 +1180,7 @@ public partial class SessionRemoteSteerableChangedData
 /// <summary>Error details for timeline display including message and optional diagnostic information.</summary>
 public partial class SessionErrorData
 {
-    /// <summary>Category of error (e.g., "authentication", "authorization", "quota", "rate_limit", "query").</summary>
+    /// <summary>Category of error (e.g., "authentication", "authorization", "quota", "rate_limit", "context_limit", "query").</summary>
     [JsonPropertyName("errorType")]
     public required string ErrorType { get; set; }
 
@@ -1216,6 +1216,11 @@ public partial class SessionIdleData
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     [JsonPropertyName("backgroundTasks")]
     public SessionIdleDataBackgroundTasks? BackgroundTasks { get; set; }
+
+    /// <summary>True when the preceding agentic loop was cancelled via abort signal.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [JsonPropertyName("aborted")]
+    public bool? Aborted { get; set; }
 }
 
 /// <summary>Session title change payload containing the new display title.</summary>
@@ -2262,6 +2267,11 @@ public partial class PermissionRequestedData
     /// <summary>Details of the permission being requested.</summary>
     [JsonPropertyName("permissionRequest")]
     public required PermissionRequest PermissionRequest { get; set; }
+
+    /// <summary>When true, this permission was already resolved by a permissionRequest hook and requires no client action.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [JsonPropertyName("resolvedByHook")]
+    public bool? ResolvedByHook { get; set; }
 }
 
 /// <summary>Permission request completion notification signaling UI dismissal.</summary>
@@ -2593,7 +2603,7 @@ public partial class SessionMcpServerStatusChangedData
     [JsonPropertyName("serverName")]
     public required string ServerName { get; set; }
 
-    /// <summary>New connection status: connected, failed, pending, disabled, or not_configured.</summary>
+    /// <summary>New connection status: connected, failed, needs-auth, pending, disabled, or not_configured.</summary>
     [JsonPropertyName("status")]
     public required SessionMcpServersLoadedDataServersItemStatus Status { get; set; }
 }
@@ -2992,6 +3002,11 @@ public partial class AssistantMessageDataToolRequestsItem
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     [JsonPropertyName("toolTitle")]
     public string? ToolTitle { get; set; }
+
+    /// <summary>Name of the MCP server hosting this tool, when the tool is an MCP tool.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [JsonPropertyName("mcpServerName")]
+    public string? McpServerName { get; set; }
 
     /// <summary>Resolved intention summary describing what this specific call does.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -3786,7 +3801,7 @@ public partial class SessionMcpServersLoadedDataServersItem
     [JsonPropertyName("name")]
     public required string Name { get; set; }
 
-    /// <summary>Connection status: connected, failed, pending, disabled, or not_configured.</summary>
+    /// <summary>Connection status: connected, failed, needs-auth, pending, disabled, or not_configured.</summary>
     [JsonPropertyName("status")]
     public required SessionMcpServersLoadedDataServersItemStatus Status { get; set; }
 
@@ -3984,6 +3999,9 @@ public enum PermissionCompletedDataResultKind
     /// <summary>The <c>denied-by-content-exclusion-policy</c> variant.</summary>
     [JsonStringEnumMemberName("denied-by-content-exclusion-policy")]
     DeniedByContentExclusionPolicy,
+    /// <summary>The <c>denied-by-permission-request-hook</c> variant.</summary>
+    [JsonStringEnumMemberName("denied-by-permission-request-hook")]
+    DeniedByPermissionRequestHook,
 }
 
 /// <summary>Elicitation mode; "form" for structured input, "url" for browser-based. Defaults to "form" when absent.</summary>
@@ -3998,7 +4016,7 @@ public enum ElicitationRequestedDataMode
     Url,
 }
 
-/// <summary>Connection status: connected, failed, pending, disabled, or not_configured.</summary>
+/// <summary>Connection status: connected, failed, needs-auth, pending, disabled, or not_configured.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter<SessionMcpServersLoadedDataServersItemStatus>))]
 public enum SessionMcpServersLoadedDataServersItemStatus
 {
@@ -4008,6 +4026,9 @@ public enum SessionMcpServersLoadedDataServersItemStatus
     /// <summary>The <c>failed</c> variant.</summary>
     [JsonStringEnumMemberName("failed")]
     Failed,
+    /// <summary>The <c>needs-auth</c> variant.</summary>
+    [JsonStringEnumMemberName("needs-auth")]
+    NeedsAuth,
     /// <summary>The <c>pending</c> variant.</summary>
     [JsonStringEnumMemberName("pending")]
     Pending,
