@@ -195,6 +195,31 @@ var session = await client.CreateSessionAsync(new SessionConfig
 
 </details>
 
+<details>
+<summary><strong>Java</strong></summary>
+
+```java
+import com.github.copilot.sdk.CopilotClient;
+
+try (var client = new CopilotClient()) {
+    client.start().get();
+
+    var hooks = new SessionHooks()
+        .setOnSessionStart((input, inv) -> CompletableFuture.completedFuture(null))
+        .setOnPreToolUse((input, inv) -> CompletableFuture.completedFuture(null))
+        .setOnPostToolUse((input, inv) -> CompletableFuture.completedFuture(null));
+        // ... add only the hooks you need
+
+    var session = client.createSession(
+        new SessionConfig()
+            .setHooks(hooks)
+            .setOnPermissionRequest(PermissionHandler.APPROVE_ALL)
+    ).get();
+}
+```
+
+</details>
+
 > **Tip:** Every hook handler receives an `invocation` parameter containing the `sessionId`, which is useful for correlating logs and maintaining per-session state.
 
 ---
@@ -376,6 +401,34 @@ var session = await client.CreateSessionAsync(new SessionConfig
         },
     },
 });
+```
+
+</details>
+
+<details>
+<summary><strong>Java</strong></summary>
+
+```java
+var readOnlyTools = Set.of("read_file", "glob", "grep", "view");
+
+var hooks = new SessionHooks()
+    .setOnPreToolUse((input, invocation) -> {
+        if (!readOnlyTools.contains(input.toolName())) {
+            return CompletableFuture.completedFuture(
+                new PreToolUseHookOutput()
+                    .setPermissionDecision("deny")
+                    .setPermissionDecisionReason(
+                        "Only read-only tools are allowed. \"" + input.toolName() + "\" was blocked.")
+            );
+        }
+        return CompletableFuture.completedFuture(PreToolUseHookOutput.allow());
+    });
+
+var session = client.createSession(
+    new SessionConfig()
+        .setHooks(hooks)
+        .setOnPermissionRequest(PermissionHandler.APPROVE_ALL)
+).get();
 ```
 
 </details>

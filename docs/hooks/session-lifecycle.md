@@ -103,6 +103,20 @@ public delegate Task<SessionStartHookOutput?> SessionStartHandler(
 
 </details>
 
+<details>
+<summary><strong>Java</strong></summary>
+
+```java
+import com.github.copilot.sdk.json.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.BiFunction;
+
+BiFunction<SessionStartHookInput, HookInvocation,
+    CompletableFuture<SessionStartHookOutput>> sessionStartHandler;
+```
+
+</details>
+
 ### Input
 
 | Field | Type | Description |
@@ -300,6 +314,20 @@ type SessionEndHandler func(
 public delegate Task<SessionEndHookOutput?> SessionEndHandler(
     SessionEndHookInput input,
     HookInvocation invocation);
+```
+
+</details>
+
+<details>
+<summary><strong>Java</strong></summary>
+
+```java
+import com.github.copilot.sdk.json.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.BiFunction;
+
+BiFunction<SessionEndHookInput, HookInvocation,
+    CompletableFuture<SessionEndHookOutput>> sessionEndHandler;
 ```
 
 </details>

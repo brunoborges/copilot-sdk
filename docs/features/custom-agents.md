@@ -205,6 +205,39 @@ await using var session = await client.CreateSessionAsync(new SessionConfig
 
 </details>
 
+<details>
+<summary><strong>Java</strong></summary>
+
+```java
+import com.github.copilot.sdk.CopilotClient;
+
+try (var client = new CopilotClient()) {
+    client.start().get();
+
+    var session = client.createSession(
+        new SessionConfig()
+            .setModel("gpt-4.1")
+            .setCustomAgents(List.of(
+                new CustomAgentConfig()
+                    .setName("researcher")
+                    .setDisplayName("Research Agent")
+                    .setDescription("Explores codebases and answers questions using read-only tools")
+                    .setTools(List.of("grep", "glob", "view"))
+                    .setPrompt("You are a research assistant. Analyze code and answer questions. Do not modify any files."),
+                new CustomAgentConfig()
+                    .setName("editor")
+                    .setDisplayName("Editor Agent")
+                    .setDescription("Makes targeted code changes")
+                    .setTools(List.of("view", "edit", "bash"))
+                    .setPrompt("You are a code editor. Make minimal, surgical changes to files as requested.")
+            ))
+            .setOnPermissionRequest(PermissionHandler.APPROVE_ALL)
+    ).get();
+}
+```
+
+</details>
+
 ## Configuration Reference
 
 | Property | Type | Required | Description |
@@ -312,6 +345,28 @@ var session = await client.CreateSessionAsync(new SessionConfig
     },
     Agent = "researcher", // Pre-select the researcher agent
 });
+```
+
+</details>
+
+<details>
+<summary><strong>Java</strong></summary>
+
+<!-- docs-validate: skip -->
+```java
+var session = client.createSession(
+    new SessionConfig()
+        .setCustomAgents(List.of(
+            new CustomAgentConfig()
+                .setName("researcher")
+                .setPrompt("You are a research assistant. Analyze code and answer questions."),
+            new CustomAgentConfig()
+                .setName("editor")
+                .setPrompt("You are a code editor. Make minimal, surgical changes.")
+        ))
+        .setAgent("researcher") // Pre-select the researcher agent
+        .setOnPermissionRequest(PermissionHandler.APPROVE_ALL)
+).get();
 ```
 
 </details>
@@ -557,6 +612,38 @@ await session.SendAndWaitAsync(new MessageOptions
 {
     Prompt = "Research how authentication works in this codebase"
 });
+```
+
+</details>
+
+<details>
+<summary><strong>Java</strong></summary>
+
+```java
+session.on(event -> {
+    switch (event.getType()) {
+        case "subagent.started" -> {
+            System.out.println("▶ Sub-agent started: " + event.getData().agentDisplayName());
+            System.out.println("  Description: " + event.getData().agentDescription());
+            System.out.println("  Tool call ID: " + event.getData().toolCallId());
+        }
+        case "subagent.completed" ->
+            System.out.println("✅ Sub-agent completed: " + event.getData().agentDisplayName());
+        case "subagent.failed" -> {
+            System.out.println("❌ Sub-agent failed: " + event.getData().agentDisplayName());
+            System.out.println("  Error: " + event.getData().error());
+        }
+        case "subagent.selected" ->
+            System.out.println("🎯 Agent selected: " + event.getData().agentDisplayName());
+        case "subagent.deselected" ->
+            System.out.println("↩ Agent deselected, returning to parent");
+        default -> {}
+    }
+});
+
+var response = session.sendAndWait(
+    new MessageOptions().setPrompt("Research how authentication works in this codebase")
+).get();
 ```
 
 </details>
