@@ -543,8 +543,8 @@ var session = client.createSession(new SessionConfig()
     .setOnPermissionRequest(PermissionHandler.APPROVE_ALL)
 ).get();
 
-session.on("assistant.message_delta", event -> {
-    System.out.print(event.getData().getDelta());
+session.on(AssistantMessageDeltaEvent.class, event -> {
+    System.out.print(event.deltaContent());
 });
 
 session.sendAndWait(new MessageOptions()
