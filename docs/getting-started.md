@@ -1414,6 +1414,9 @@ public class WeatherAssistant {
                 new SessionConfig()
                     .setModel("gpt-4.1")
                     .setStreaming(true)
+                    .setOnPermissionRequest(request ->
+                        CompletableFuture.completedFuture(PermissionDecision.allow())
+                    )
                     .setTools(List.of(getWeather))
             ).get();
 
