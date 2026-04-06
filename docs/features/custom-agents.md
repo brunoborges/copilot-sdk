@@ -360,10 +360,6 @@ var session = await client.CreateSessionAsync(new SessionConfig
 import com.github.copilot.sdk.json.*;
 import java.util.List;
 
-```java
-import com.github.copilot.sdk.json.*;
-import java.util.List;
-
 var session = client.createSession(
     new SessionConfig()
         .setCustomAgents(List.of(
