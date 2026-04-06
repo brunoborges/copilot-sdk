@@ -202,6 +202,7 @@ var session = await client.CreateSessionAsync(new SessionConfig
 import com.github.copilot.sdk.CopilotClient;
 import com.github.copilot.sdk.events.*;
 import com.github.copilot.sdk.json.*;
+import java.util.concurrent.CompletableFuture;
 
 try (var client = new CopilotClient()) {
     client.start().get();
