@@ -228,7 +228,6 @@ var response = await session.SendAndWaitAsync(
 
 ```java
 import com.github.copilot.sdk.CopilotClient;
-import com.github.copilot.sdk.CopilotClientOptions;
 import com.github.copilot.sdk.events.*;
 import com.github.copilot.sdk.json.*;
 

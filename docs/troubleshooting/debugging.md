@@ -99,7 +99,7 @@ var client = new CopilotClient(new CopilotClientOptions
 
 ```java
 import com.github.copilot.sdk.CopilotClient;
-import com.github.copilot.sdk.CopilotClientOptions;
+import com.github.copilot.sdk.json.*;
 
 var client = new CopilotClient(new CopilotClientOptions()
     .setLogLevel("debug")

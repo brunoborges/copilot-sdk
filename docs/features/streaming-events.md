@@ -196,7 +196,7 @@ session.On(evt =>
 
 ```java
 // All events
-session.on(event -> System.out.println(event.getType() + " " + event.getData()));
+session.on(event -> System.out.println(event.getType()));
 
 // Specific event type — data is narrowed to the matching class
 session.on(AssistantMessageDeltaEvent.class, event ->

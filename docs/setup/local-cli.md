@@ -141,7 +141,7 @@ var session = client.createSession(new SessionConfig()
 
 var response = session.sendAndWait(new MessageOptions()
     .setPrompt("Hello!")).get();
-System.out.println(response.data().content());
+System.out.println(response.getData().content());
 
 client.stop().get();
 ```

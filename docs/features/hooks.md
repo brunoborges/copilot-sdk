@@ -417,10 +417,8 @@ var hooks = new SessionHooks()
     .setOnPreToolUse((input, invocation) -> {
         if (!readOnlyTools.contains(input.getToolName())) {
             return CompletableFuture.completedFuture(
-                new PreToolUseHookOutput()
-                    .setPermissionDecision("deny")
-                    .setPermissionDecisionReason(
-                        "Only read-only tools are allowed. \"" + input.getToolName() + "\" was blocked.")
+                PreToolUseHookOutput.deny(
+                    "Only read-only tools are allowed. \"" + input.getToolName() + "\" was blocked.")
             );
         }
         return CompletableFuture.completedFuture(PreToolUseHookOutput.allow());

@@ -104,11 +104,8 @@ public delegate Task<UserPromptSubmittedHookOutput?> UserPromptSubmittedHandler(
 
 ```java
 import com.github.copilot.sdk.json.*;
-import java.util.concurrent.CompletableFuture;
-import java.util.function.BiFunction;
 
-BiFunction<UserPromptSubmittedHookInput, HookInvocation,
-    CompletableFuture<UserPromptSubmittedHookOutput>> userPromptSubmittedHandler;
+UserPromptSubmittedHandler userPromptSubmittedHandler;
 ```
 
 </details>
@@ -260,7 +257,7 @@ import java.util.concurrent.CompletableFuture;
 
 var hooks = new SessionHooks()
     .setOnUserPromptSubmitted((input, invocation) -> {
-        System.out.println("[" + invocation.getSessionId() + "] User: " + input.getPrompt());
+        System.out.println("[" + invocation.getSessionId() + "] User: " + input.prompt());
         return CompletableFuture.completedFuture(null);
     });
 

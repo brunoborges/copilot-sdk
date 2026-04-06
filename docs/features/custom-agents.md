@@ -623,23 +623,19 @@ await session.SendAndWaitAsync(new MessageOptions
 
 ```java
 session.on(event -> {
-    switch (event.getType()) {
-        case "subagent.started" -> {
-            System.out.println("▶ Sub-agent started: " + event.getData().agentDisplayName());
-            System.out.println("  Description: " + event.getData().agentDescription());
-            System.out.println("  Tool call ID: " + event.getData().toolCallId());
-        }
-        case "subagent.completed" ->
-            System.out.println("✅ Sub-agent completed: " + event.getData().agentDisplayName());
-        case "subagent.failed" -> {
-            System.out.println("❌ Sub-agent failed: " + event.getData().agentDisplayName());
-            System.out.println("  Error: " + event.getData().error());
-        }
-        case "subagent.selected" ->
-            System.out.println("🎯 Agent selected: " + event.getData().agentDisplayName());
-        case "subagent.deselected" ->
-            System.out.println("↩ Agent deselected, returning to parent");
-        default -> {}
+    if (event instanceof SubagentStartedEvent e) {
+        System.out.println("▶ Sub-agent started: " + e.getData().agentDisplayName());
+        System.out.println("  Description: " + e.getData().agentDescription());
+        System.out.println("  Tool call ID: " + e.getData().toolCallId());
+    } else if (event instanceof SubagentCompletedEvent e) {
+        System.out.println("✅ Sub-agent completed: " + e.getData().agentName());
+    } else if (event instanceof SubagentFailedEvent e) {
+        System.out.println("❌ Sub-agent failed: " + e.getData().agentName());
+        System.out.println("  Error: " + e.getData().error());
+    } else if (event instanceof SubagentSelectedEvent e) {
+        System.out.println("🎯 Agent selected: " + e.getData().agentDisplayName());
+    } else if (event instanceof SubagentDeselectedEvent e) {
+        System.out.println("↩ Agent deselected, returning to parent");
     }
 });
 

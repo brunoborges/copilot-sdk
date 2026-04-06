@@ -284,7 +284,7 @@ var session = client.createSession(
 
 session.setEventErrorPolicy(EventErrorPolicy.SUPPRESS_AND_LOG_ERRORS);
 session.setEventErrorHandler((event, ex) -> {
-    System.err.println("[" + session.getId() + "] Error: " + ex.getMessage());
+    System.err.println("[" + session.getSessionId() + "] Error: " + ex.getMessage());
     System.err.println("  Event: " + event.getType());
 });
 ```

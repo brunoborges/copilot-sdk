@@ -104,11 +104,8 @@ public delegate Task<PostToolUseHookOutput?> PostToolUseHandler(
 
 ```java
 import com.github.copilot.sdk.json.*;
-import java.util.concurrent.CompletableFuture;
-import java.util.function.BiFunction;
 
-BiFunction<PostToolUseHookInput, HookInvocation,
-    CompletableFuture<PostToolUseHookOutput>> postToolUseHandler;
+PostToolUseHandler postToolUseHandler;
 ```
 
 </details>

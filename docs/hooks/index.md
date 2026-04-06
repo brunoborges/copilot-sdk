@@ -178,7 +178,7 @@ try (var client = new CopilotClient()) {
         })
         .setOnSessionStart((input, invocation) -> {
             return CompletableFuture.completedFuture(
-                new SessionStartHookOutput().setAdditionalContext("User prefers concise answers.")
+                new SessionStartHookOutput("User prefers concise answers.", null)
             );
         });
 

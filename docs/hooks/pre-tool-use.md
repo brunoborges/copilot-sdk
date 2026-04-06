@@ -104,11 +104,8 @@ public delegate Task<PreToolUseHookOutput?> PreToolUseHandler(
 
 ```java
 import com.github.copilot.sdk.json.*;
-import java.util.concurrent.CompletableFuture;
-import java.util.function.BiFunction;
 
-BiFunction<PreToolUseHookInput, HookInvocation,
-    CompletableFuture<PreToolUseHookOutput>> preToolUseHandler;
+PreToolUseHandler preToolUseHandler;
 ```
 
 </details>

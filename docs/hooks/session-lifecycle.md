@@ -108,11 +108,8 @@ public delegate Task<SessionStartHookOutput?> SessionStartHandler(
 
 ```java
 import com.github.copilot.sdk.json.*;
-import java.util.concurrent.CompletableFuture;
-import java.util.function.BiFunction;
 
-BiFunction<SessionStartHookInput, HookInvocation,
-    CompletableFuture<SessionStartHookOutput>> sessionStartHandler;
+SessionStartHandler sessionStartHandler;
 ```
 
 </details>
@@ -323,11 +320,8 @@ public delegate Task<SessionEndHookOutput?> SessionEndHandler(
 
 ```java
 import com.github.copilot.sdk.json.*;
-import java.util.concurrent.CompletableFuture;
-import java.util.function.BiFunction;
 
-BiFunction<SessionEndHookInput, HookInvocation,
-    CompletableFuture<SessionEndHookOutput>> sessionEndHandler;
+SessionEndHandler sessionEndHandler;
 ```
 
 </details>

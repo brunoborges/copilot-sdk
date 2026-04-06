@@ -169,7 +169,6 @@ Console.WriteLine(response?.Data.Content);
 
 ```java
 import com.github.copilot.sdk.CopilotClient;
-import com.github.copilot.sdk.CopilotClientOptions;
 import com.github.copilot.sdk.events.*;
 import com.github.copilot.sdk.json.*;
 
@@ -448,17 +447,18 @@ var client = new CopilotClient(new CopilotClientOptions
 
 ```java
 import com.github.copilot.sdk.CopilotClient;
-import com.github.copilot.sdk.CopilotClientOptions;
+import com.github.copilot.sdk.json.*;
+import java.util.concurrent.CompletableFuture;
 
 var client = new CopilotClient(new CopilotClientOptions()
-    .setOnListModels(() -> List.of(
+    .setOnListModels(() -> CompletableFuture.completedFuture(List.of(
         new ModelInfo()
             .setId("my-custom-model")
             .setName("My Custom Model")
             .setCapabilities(new ModelCapabilities()
                 .setSupports(new ModelSupports().setVision(false).setReasoningEffort(false))
                 .setLimits(new ModelLimits().setMaxContextWindowTokens(128000)))
-    ))
+    )))
 );
 ```
 

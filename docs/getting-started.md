@@ -1707,7 +1707,7 @@ await using var session = await client.CreateSessionAsync(new()
 
 ```java
 import com.github.copilot.sdk.CopilotClient;
-import com.github.copilot.sdk.CopilotClientOptions;
+import com.github.copilot.sdk.json.*;
 
 var client = new CopilotClient(
     new CopilotClientOptions().setCliUrl("localhost:4321")
@@ -1811,7 +1811,7 @@ No extra dependencies — uses built-in `System.Diagnostics.Activity`.
 <!-- docs-validate: skip -->
 ```java
 import com.github.copilot.sdk.CopilotClient;
-import com.github.copilot.sdk.CopilotClientOptions;
+import com.github.copilot.sdk.json.*;
 
 var client = new CopilotClient(new CopilotClientOptions()
     .setTelemetry(new TelemetryConfig()
